@@ -260,6 +260,15 @@ def install_demucs_without_deps(args: argparse.Namespace) -> None:
         )
         if code == 0:
             return
+        if args.china_mirror and not args.pip_index.strip():
+            print(f"WARNING: PyPI mirror failed while installing {package}; retrying with the official PyPI index.")
+            code = run(
+                [str(PYTHON), "-m", "pip", "install", package, "--no-deps"],
+                [],
+                check=False,
+            )
+            if code == 0:
+                return
         last_error = code
     raise SystemExit(f"Demucs installation failed with exit code {last_error}.")
 
