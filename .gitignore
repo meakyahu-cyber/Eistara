@@ -14,22 +14,25 @@ config.yaml
 .env.*
 
 # Runtime outputs and job data
-work/
-output/
-history/
-jobs/
-logs/
-batch/
-batch_jobs/
+/work/
+/output/
+/history/
+/jobs/
+/logs/
+/batch/
+/batch_jobs/
 
 # Local model/cache data
-_model_cache/
-models/
-.research_github/
-_downloads/
-tools/ffmpeg/
+/_model_cache/
+/models/
+/.research_github/
+/_downloads/
+/tools/ffmpeg/
 
 # Release archives and local packages
+/build/
+/dist/
+/*.egg-info/
 *.zip
 *.7z
 *.rar
