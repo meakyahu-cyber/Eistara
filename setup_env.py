@@ -64,7 +64,7 @@ def main() -> int:
     ensure_root()
     ensure_config()
     if not args.skip_venv:
-        create_venv()
+        create_venv(args)
     if not PYTHON.exists():
         raise SystemExit(f"Python in virtualenv was not found: {PYTHON}")
     ensure_venv_python_version()
@@ -128,16 +128,16 @@ def ensure_config() -> None:
     print("Created config.local.yaml. Fill LLM settings in WebUI or edit the file later.")
 
 
-def create_venv() -> None:
+def create_venv(args: argparse.Namespace) -> None:
     if PYTHON.exists():
         print(f"Using existing virtualenv: {VENV_DIR}")
         return
     print(f"Creating virtualenv: {VENV_DIR}")
-    interpreter = find_supported_python()
+    interpreter = find_supported_python(args)
     run([*interpreter, "-m", "venv", str(VENV_DIR)], [])
 
 
-def find_supported_python() -> list[str]:
+def find_supported_python(args: argparse.Namespace) -> list[str]:
     candidates: list[list[str]] = []
     if is_supported_python(sys.executable):
         candidates.append([sys.executable])
@@ -147,10 +147,8 @@ def find_supported_python() -> list[str]:
     for candidate in candidates:
         if command_is_supported_python(candidate):
             return candidate
-    raise SystemExit(
-        "Eistara needs Python 3.10 or 3.11 to create .venv. "
-        "Install Python 3.10, or make it available through the Windows 'py' launcher."
-    )
+    uv_command = ensure_uv(args)
+    return [*uv_command, "run", "--python", "3.10", "python"]
 
 
 def command_is_supported_python(command: list[str]) -> bool:
@@ -182,6 +180,38 @@ def ensure_venv_python_version() -> None:
         f"Existing virtualenv uses an unsupported Python: {PYTHON}. "
         "Remove .venv and rerun setup_env.py with Python 3.10/3.11 available."
     )
+
+
+def ensure_uv(args: argparse.Namespace) -> list[str]:
+    if command_exists(["uv", "--version"]):
+        print("Python 3.10/3.11 was not found; using uv to provision Python 3.10.")
+        return ["uv"]
+    try:
+        subprocess.run([sys.executable, "-m", "uv", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        print("Python 3.10/3.11 was not found; using uv to provision Python 3.10.")
+        return [sys.executable, "-m", "uv"]
+    except (OSError, subprocess.CalledProcessError):
+        pass
+
+    print("Python 3.10/3.11 was not found; installing uv bootstrapper with the current Python.")
+    code = run([sys.executable, "-m", "pip", "install", "--user", "uv"], pip_index_args(args), check=False)
+    if code != 0 and args.china_mirror and not args.pip_index.strip():
+        print("WARNING: PyPI mirror failed while installing uv; retrying with the official PyPI index.")
+        run([sys.executable, "-m", "pip", "install", "--user", "uv"], [], check=True)
+    elif code != 0:
+        raise SystemExit(code)
+    try:
+        subprocess.run([sys.executable, "-m", "uv", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise SystemExit("uv installation failed. Install Python 3.10 manually and rerun setup_env.py.") from exc
+    return [sys.executable, "-m", "uv"]
+
+
+def command_exists(command: list[str]) -> bool:
+    try:
+        return subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0
+    except OSError:
+        return False
 
 
 def install_dependencies(args: argparse.Namespace) -> None:

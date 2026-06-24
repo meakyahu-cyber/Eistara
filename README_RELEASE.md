@@ -27,6 +27,9 @@ Windows NVIDIA links:
 - [CUDA Toolkit 12.6](https://developer.download.nvidia.com/compute/cuda/12.6.0/local_installers/cuda_12.6.0_560.76_windows.exe)
 - [CUDNN 9.3.0](https://developer.download.nvidia.com/compute/cudnn/9.3.0/local_installers/cudnn_9.3.0_windows.exe)
 
+If Python 3.10/3.11 is not available, `setup_env.py` will try to install and
+use `uv` to provision Python 3.10 for Eistara's `.venv`.
+
 ## One-command Install
 
 Open PowerShell in the release directory and run:
