@@ -1,0 +1,8 @@
+Eistara Notice
+==============
+
+Eistara is the maintained video translation and dubbing pipeline.
+Third-party-derived portions remain subject to their original licenses.
+
+Keep source origin, licensing obligations, and Eistara-specific strategy code
+clearly separated by module boundaries.

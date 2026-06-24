@@ -1,0 +1,35 @@
+# Local user configuration template for Eistara release packages.
+# Copy to config.local.yaml or let setup_env.py/launch.py create it.
+
+api:
+  key: ""
+  base_url: ""
+  model: ""
+  llm_support_json: true
+  proxy_url: ""
+
+whisper:
+  runtime: local
+  model: large-v3
+  language: en
+  print_progress: false
+  whisperX_302_api_key: ""
+  elevenlabs_api_key: ""
+
+demucs:
+  enabled: true
+  provider: demucs
+  segment_minutes: 30
+  audio_separator_model: UVR-MDX-NET-Voc_FT.onnx
+  audio_separator_model_dir: ./models/audio-separator
+
+indextts:
+  api_url: "http://127.0.0.1:8010/tts"
+  prompt_audio_mode: auto_ref
+
+render:
+  render_audio: true
+  render_video: true
+  burn_subtitles: false
+
+model_dir: ./_model_cache

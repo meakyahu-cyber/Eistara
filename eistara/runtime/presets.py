@@ -1,0 +1,10 @@
+from __future__ import annotations
+
+
+PRODUCTION_PRESET = "production"
+
+PIPELINE_PRESETS = [
+    PRODUCTION_PRESET,
+]
+
+WEBUI_DEFAULT_PRESET = PRODUCTION_PRESET

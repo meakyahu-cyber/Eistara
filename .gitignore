@@ -1,0 +1,38 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Local virtualenv
+.venv/
+
+# Local secrets and user config
+config.local.yaml
+config.yaml
+.env
+.env.*
+
+# Runtime outputs and job data
+work/
+output/
+history/
+jobs/
+logs/
+batch/
+batch_jobs/
+
+# Local model/cache data
+_model_cache/
+models/
+.research_github/
+_downloads/
+tools/ffmpeg/
+
+# Release archives and local packages
+*.zip
+*.7z
+*.rar
+
+# Logs
+*.log
