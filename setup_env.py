@@ -68,6 +68,8 @@ def main() -> int:
     if not PYTHON.exists():
         raise SystemExit(f"Python in virtualenv was not found: {PYTHON}")
     ensure_venv_python_version()
+    if not args.skip_deps:
+        ensure_pip()
 
     check_host_runtime()
 
@@ -157,7 +159,7 @@ def create_venv_with_uv(args: argparse.Namespace) -> None:
     uv_command = ensure_uv(args)
     env = os.environ.copy()
     env.setdefault("UV_LINK_MODE", "copy")
-    run([*uv_command, "venv", "--python", "3.10", str(VENV_DIR)], [], env=env)
+    run([*uv_command, "venv", "--seed", "--python", "3.10", str(VENV_DIR)], [], env=env)
 
 
 def command_is_supported_python(command: list[str]) -> bool:
@@ -189,6 +191,13 @@ def ensure_venv_python_version() -> None:
         f"Existing virtualenv uses an unsupported Python: {PYTHON}. "
         "Remove .venv and rerun setup_env.py with Python 3.10/3.11 available."
     )
+
+
+def ensure_pip() -> None:
+    if run([str(PYTHON), "-m", "pip", "--version"], [], check=False) == 0:
+        return
+    print("pip was not found in .venv; bootstrapping with ensurepip.")
+    run([str(PYTHON), "-m", "ensurepip", "--upgrade"], [])
 
 
 def ensure_uv(args: argparse.Namespace) -> list[str]:
