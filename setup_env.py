@@ -133,11 +133,14 @@ def create_venv(args: argparse.Namespace) -> None:
         print(f"Using existing virtualenv: {VENV_DIR}")
         return
     print(f"Creating virtualenv: {VENV_DIR}")
-    interpreter = find_supported_python(args)
-    run([*interpreter, "-m", "venv", str(VENV_DIR)], [])
+    interpreter = find_supported_python()
+    if interpreter:
+        run([*interpreter, "-m", "venv", str(VENV_DIR)], [])
+        return
+    create_venv_with_uv(args)
 
 
-def find_supported_python(args: argparse.Namespace) -> list[str]:
+def find_supported_python() -> list[str] | None:
     candidates: list[list[str]] = []
     if is_supported_python(sys.executable):
         candidates.append([sys.executable])
@@ -147,8 +150,14 @@ def find_supported_python(args: argparse.Namespace) -> list[str]:
     for candidate in candidates:
         if command_is_supported_python(candidate):
             return candidate
+    return None
+
+
+def create_venv_with_uv(args: argparse.Namespace) -> None:
     uv_command = ensure_uv(args)
-    return [*uv_command, "run", "--python", "3.10", "python"]
+    env = os.environ.copy()
+    env.setdefault("UV_LINK_MODE", "copy")
+    run([*uv_command, "venv", "--python", "3.10", str(VENV_DIR)], [], env=env)
 
 
 def command_is_supported_python(command: list[str]) -> bool:
