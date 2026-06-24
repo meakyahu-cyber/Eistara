@@ -13,8 +13,6 @@ import os
 import shutil
 import subprocess
 import sys
-import venv
-import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlretrieve
@@ -57,7 +55,8 @@ UVR_MODEL_SIZE = 66762490
 UVR_MODEL_MD5 = "d21dc03e4b9ef397b47231f483af6db8"
 UVR_MODEL_URL = "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Voc_FT.onnx"
 UVR_MODEL_MIRROR_URL = "https://gh.llkk.cc/https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Voc_FT.onnx"
-FFMPEG_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+SUPPORTED_PYTHON_MIN = (3, 10)
+SUPPORTED_PYTHON_MAX = (3, 12)
 
 
 def main() -> int:
@@ -68,11 +67,9 @@ def main() -> int:
         create_venv()
     if not PYTHON.exists():
         raise SystemExit(f"Python in virtualenv was not found: {PYTHON}")
+    ensure_venv_python_version()
 
-    if args.install_ffmpeg:
-        install_portable_ffmpeg()
-    else:
-        check_ffmpeg_hint()
+    check_host_runtime()
 
     if not args.skip_deps:
         install_dependencies(args)
@@ -98,7 +95,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pip-index", default="", help="Override pip index URL. Defaults to Tsinghua mirror when --china-mirror is enabled.")
     parser.add_argument("--hf-endpoint", default="", help="Override HuggingFace endpoint. Defaults to hf-mirror.com when --china-mirror is enabled.")
     parser.add_argument("--torch", choices=["auto", "cpu", "cu128"], default="auto", help="PyTorch wheel channel.")
-    parser.add_argument("--install-ffmpeg", action="store_true", help="Download a portable ffmpeg into tools/ffmpeg.")
     parser.add_argument("--with-zh-asr", action="store_true", help="Also cache the Chinese Belle faster-whisper model.")
     parser.add_argument("--skip-demucs-model", action="store_true", help="Do not prefetch the Demucs htdemucs checkpoint.")
     parser.add_argument("--skip-uvr-mdx", action="store_true", help="Do not download the optional UVR-MDX audio-separator model.")
@@ -137,25 +133,73 @@ def create_venv() -> None:
         print(f"Using existing virtualenv: {VENV_DIR}")
         return
     print(f"Creating virtualenv: {VENV_DIR}")
-    venv.EnvBuilder(with_pip=True, clear=False).create(VENV_DIR)
+    interpreter = find_supported_python()
+    run([*interpreter, "-m", "venv", str(VENV_DIR)], [])
+
+
+def find_supported_python() -> list[str]:
+    candidates: list[list[str]] = []
+    if is_supported_python(sys.executable):
+        candidates.append([sys.executable])
+    if os.name == "nt":
+        candidates.extend([["py", "-3.10"], ["py", "-3.11"]])
+    candidates.extend([["python3.10"], ["python3.11"], ["python"]])
+    for candidate in candidates:
+        if command_is_supported_python(candidate):
+            return candidate
+    raise SystemExit(
+        "Eistara needs Python 3.10 or 3.11 to create .venv. "
+        "Install Python 3.10, or make it available through the Windows 'py' launcher."
+    )
+
+
+def command_is_supported_python(command: list[str]) -> bool:
+    try:
+        code = (
+            "import sys; "
+            f"raise SystemExit(0 if {SUPPORTED_PYTHON_MIN!r} <= sys.version_info[:2] < {SUPPORTED_PYTHON_MAX!r} else 1)"
+        )
+        return subprocess.run([*command, "-c", code], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0
+    except OSError:
+        return False
+
+
+def is_supported_python(executable: str) -> bool:
+    try:
+        code = (
+            "import sys; "
+            f"raise SystemExit(0 if {SUPPORTED_PYTHON_MIN!r} <= sys.version_info[:2] < {SUPPORTED_PYTHON_MAX!r} else 1)"
+        )
+        return subprocess.run([executable, "-c", code], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0
+    except OSError:
+        return False
+
+
+def ensure_venv_python_version() -> None:
+    if command_is_supported_python([str(PYTHON)]):
+        return
+    raise SystemExit(
+        f"Existing virtualenv uses an unsupported Python: {PYTHON}. "
+        "Remove .venv and rerun setup_env.py with Python 3.10/3.11 available."
+    )
 
 
 def install_dependencies(args: argparse.Namespace) -> None:
-    run([str(PYTHON), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], pip_index_args(args))
+    run_pip(["install", "--upgrade", "pip", "setuptools", "wheel"], args, allow_official_fallback=True)
     torch_channel = choose_torch_channel(args.torch)
     run(
         [str(PYTHON), "-m", "pip", "install", *TORCH_PACKAGES, "--index-url", PYTORCH_INDEXES[torch_channel]],
         [],
     )
-    run([str(PYTHON), "-m", "pip", "install", PROJECT_EXTRAS], pip_index_args(args))
-    run([str(PYTHON), "-m", "pip", "install", *ASR_PACKAGES], pip_index_args(args))
+    run_pip(["install", PROJECT_EXTRAS], args, allow_official_fallback=True)
+    run_pip(["install", *ASR_PACKAGES], args, allow_official_fallback=True)
 
     # Demucs declares torchaudio<2.2 even though the runtime works with modern
     # torch/torchaudio. Install its support packages normally, then install the
     # Demucs wheel without allowing pip to downgrade torch.
-    run([str(PYTHON), "-m", "pip", "install", *DEMUX_RUNTIME_DEPS], pip_index_args(args))
+    run_pip(["install", *DEMUX_RUNTIME_DEPS], args, allow_official_fallback=True)
     install_demucs_without_deps(args)
-    run([str(PYTHON), "-m", "pip", "install", *AUDIO_SEPARATOR_PACKAGES], pip_index_args(args))
+    run_pip(["install", *AUDIO_SEPARATOR_PACKAGES], args, allow_official_fallback=True)
 
 
 def install_demucs_without_deps(args: argparse.Namespace) -> None:
@@ -233,44 +277,16 @@ def valid_file(path: Path, expected_size: int, expected_md5: str) -> bool:
     return digest.hexdigest().lower() == expected_md5.lower()
 
 
-def install_portable_ffmpeg() -> None:
-    bin_dir = ROOT / "tools" / "ffmpeg" / "bin"
-    ffmpeg = bin_dir / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
-    ffprobe = bin_dir / ("ffprobe.exe" if os.name == "nt" else "ffprobe")
-    if ffmpeg.exists() and ffprobe.exists():
-        print(f"Portable ffmpeg already ready: {bin_dir}")
-        return
-
-    download_dir = ROOT / "_downloads"
-    archive = download_dir / "ffmpeg-release-essentials.zip"
-    extract_dir = ROOT / "tools" / "ffmpeg" / "_extract"
-    download_dir.mkdir(exist_ok=True)
-    extract_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Downloading ffmpeg: {FFMPEG_URL}")
-    urlretrieve(FFMPEG_URL, archive)
-
-    if extract_dir.resolve().is_relative_to((ROOT / "tools" / "ffmpeg").resolve()):
-        shutil.rmtree(extract_dir, ignore_errors=True)
-        extract_dir.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(archive) as zf:
-        zf.extractall(extract_dir)
-    candidates = list(extract_dir.glob("**/bin/ffmpeg.exe"))
-    if not candidates:
-        raise SystemExit("ffmpeg.exe was not found in downloaded archive.")
-    source_bin = candidates[0].parent
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    for item in source_bin.iterdir():
-        if item.is_file():
-            shutil.copy2(item, bin_dir / item.name)
-    shutil.rmtree(extract_dir, ignore_errors=True)
-    print(f"Portable ffmpeg ready: {bin_dir}")
-
-
-def check_ffmpeg_hint() -> None:
-    local_bin = ROOT / "tools" / "ffmpeg" / "bin"
-    if shutil.which("ffmpeg") or (local_bin / "ffmpeg.exe").exists():
-        return
-    print("WARNING: ffmpeg was not found. Re-run with --install-ffmpeg or install ffmpeg manually.")
+def check_host_runtime() -> None:
+    print("Checking host runtime dependencies...")
+    if shutil.which("ffmpeg") and shutil.which("ffprobe"):
+        print("ffmpeg/ffprobe: found")
+    else:
+        print("WARNING: ffmpeg/ffprobe not found in PATH. Install FFmpeg on the host machine before running Eistara.")
+    if shutil.which("nvidia-smi"):
+        print("NVIDIA driver: detected")
+    else:
+        print("NVIDIA driver: not detected. GPU acceleration may be unavailable; CPU mode can still be used.")
 
 
 def run_health_summary() -> None:
@@ -302,6 +318,18 @@ def pip_index_args(args: argparse.Namespace) -> list[str]:
     if host:
         result.extend(["--trusted-host", host])
     return result
+
+
+def run_pip(pip_args: list[str], args: argparse.Namespace, *, allow_official_fallback: bool = False) -> None:
+    command = [str(PYTHON), "-m", "pip", *pip_args]
+    code = run(command, pip_index_args(args), check=False)
+    if code == 0:
+        return
+    if allow_official_fallback and args.china_mirror and not args.pip_index.strip():
+        print("WARNING: PyPI mirror failed; retrying with the official PyPI index.")
+        run(command, [], check=True)
+        return
+    raise SystemExit(code)
 
 
 def run(cmd: list[str], extra_args: list[str], *, env: dict[str, str] | None = None, check: bool = True) -> int:

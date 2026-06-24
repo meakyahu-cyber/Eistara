@@ -4,6 +4,8 @@ Eistara is the maintained video translation and dubbing pipeline.
 This repository contains the runtime, WebUI, CLI, adapters, and core workflow
 modules used for current development.
 
+Chinese install guide: [README.zh.md](README.zh.md)
+
 ## Architecture
 
 The codebase is split around stable workflow boundaries:
