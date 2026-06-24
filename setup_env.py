@@ -45,7 +45,7 @@ DEMUX_RUNTIME_DEPS = [
     "openunmix",
     "tqdm",
 ]
-DEMUX_PACKAGES = ["demucs==4.1.0a3", "demucs==4.0.1"]
+DEMUX_PACKAGE = "demucs @ git+https://github.com/adefossez/demucs@b9ab48cad45976ba42b2ff17b229c071f0df9390"
 AUDIO_SEPARATOR_PACKAGES = ["audio-separator==0.44.2", "onnxruntime-gpu==1.23.2"]
 
 DEFAULT_ASR_MODEL = "Systran/faster-whisper-large-v3"
@@ -251,26 +251,13 @@ def install_dependencies(args: argparse.Namespace) -> None:
 
 
 def install_demucs_without_deps(args: argparse.Namespace) -> None:
-    last_error = 0
-    for package in DEMUX_PACKAGES:
-        code = run(
-            [str(PYTHON), "-m", "pip", "install", package, "--no-deps"],
-            pip_index_args(args),
-            check=False,
-        )
-        if code == 0:
-            return
-        if args.china_mirror and not args.pip_index.strip():
-            print(f"WARNING: PyPI mirror failed while installing {package}; retrying with the official PyPI index.")
-            code = run(
-                [str(PYTHON), "-m", "pip", "install", package, "--no-deps"],
-                [],
-                check=False,
-            )
-            if code == 0:
-                return
-        last_error = code
-    raise SystemExit(f"Demucs installation failed with exit code {last_error}.")
+    code = run([str(PYTHON), "-m", "pip", "install", DEMUX_PACKAGE, "--no-deps"], [], check=False)
+    if code == 0:
+        return
+    raise SystemExit(
+        "Demucs 4.1.0a3 installation failed. Eistara pins Demucs to the same "
+        "Git commit used by the development environment; check GitHub/network access and rerun setup_env.py."
+    )
 
 
 def prepare_models(args: argparse.Namespace) -> None:
