@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import gc
-import shutil
 import subprocess
-import sys
 from pathlib import Path
 from typing import Iterable
 
@@ -46,10 +44,6 @@ def demucs_audio(source_audio: str | Path, output_dir: str | Path, *, segment_mi
         from demucs.audio import save_audio
         from demucs.pretrained import get_model
         from torch.cuda import is_available as is_cuda_available
-    except ModuleNotFoundError as exc:
-        if exc.name == "demucs.api":
-            return _demucs_audio_cli(source_audio, audio_dir, vocal_path, background_path)
-        raise DemucsAdapterError("demucs/torch packages are not available") from exc
     except Exception as exc:
         raise DemucsAdapterError("demucs/torch packages are not available") from exc
 
@@ -166,63 +160,3 @@ def _release(torch_module) -> None:
             torch_module.cuda.empty_cache()
     except Exception:
         pass
-
-
-def _demucs_audio_cli(source_audio: str | Path, audio_dir: Path, vocal_path: Path, background_path: Path) -> tuple[Path, Path]:
-    """Fallback for public demucs 4.0.x, which exposes CLI but not demucs.api."""
-    work_dir = audio_dir / "_demucs_cli"
-    if work_dir.exists():
-        shutil.rmtree(work_dir)
-    work_dir.mkdir(parents=True, exist_ok=True)
-    command = [
-        sys.executable,
-        "-m",
-        "demucs.separate",
-        "-n",
-        "htdemucs",
-        "--two-stems",
-        "vocals",
-        "--mp3",
-        "--mp3-bitrate",
-        "128",
-        "--mp3-preset",
-        "2",
-        "-j",
-        "0",
-        "--out",
-        str(work_dir),
-        str(source_audio),
-    ]
-    try:
-        result = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout or "").strip()
-            raise DemucsAdapterError(f"Demucs CLI failed with exit code {result.returncode}: {detail}")
-        vocal_candidate = _find_demucs_cli_output(work_dir, "vocals.mp3")
-        background_candidate = _find_demucs_cli_output(work_dir, "no_vocals.mp3")
-        shutil.copy2(vocal_candidate, vocal_path)
-        shutil.copy2(background_candidate, background_path)
-        if not _is_usable_audio_file(vocal_path):
-            raise DemucsAdapterError(f"Demucs vocal output is not a readable audio file: {vocal_path}")
-        if not _is_usable_audio_file(background_path):
-            raise DemucsAdapterError(f"Demucs background output is not a readable audio file: {background_path}")
-        return vocal_path, background_path
-    finally:
-        try:
-            shutil.rmtree(work_dir)
-        except FileNotFoundError:
-            pass
-
-
-def _find_demucs_cli_output(root: Path, filename: str) -> Path:
-    matches = sorted(path for path in root.rglob(filename) if path.is_file())
-    if not matches:
-        raise DemucsAdapterError(f"Demucs CLI did not produce {filename}")
-    return matches[0]
