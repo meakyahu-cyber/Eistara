@@ -12,6 +12,7 @@ from eistara.core.delivery import ArtifactRole, SubtitleDeliveryGenerator, Subti
 from eistara.core.jobs.models import StageName
 from eistara.core.pipeline import StageContext, StageResult, output_internal_path
 from eistara.core.subtitle import SubtitleEvent, format_srt_timestamp, normalize_subtitle_text, parse_time_seconds, render_srt
+from eistara.core.tts.segments import write_tts_segments_json
 
 from .llm import LlmClient
 from .models import Terminology, TranslationItem, TranslationSettings
@@ -86,11 +87,13 @@ class PublishTranslationStageRunner:
         )
 
         tts_segments = _build_tts_segments(items, result.translations, output_dir)
+        tts_segments_json = write_tts_segments_json(output_dir, tts_segments)
         outputs: dict[str, Any] = {
             "translations": result.translations,
             "translation_count": len(result.translations),
             "translations_json": str(translations_json),
             "tts_segments": tts_segments,
+            "tts_segments_json": str(tts_segments_json),
             "tts_segments_count": len(tts_segments),
             **v1_outputs,
         }

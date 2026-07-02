@@ -673,6 +673,9 @@ def test_publish_translation_stage_runner_reads_subtitle_rows_and_writes_tts_seg
     assert result.outputs["tts_segments"][0]["source"] == "Hello world"
     assert result.outputs["tts_segments"][0]["speaker"] == "SPEAKER_01"
     assert result.outputs["tts_segments"][0]["metadata"]["speaker"] == "SPEAKER_01"
+    tts_segments_json = Path(result.outputs["tts_segments_json"])
+    assert tts_segments_json == tmp_path / "output" / "internal" / "tts_segments.json"
+    assert json.loads(tts_segments_json.read_text(encoding="utf-8"))["segments"][0]["source"] == "Hello world"
     assert result.outputs["tts_segments"][0]["text"] == "你好，世界"
     assert result.outputs["tts_segments"][0]["output_path"].endswith("output\\audio\\tmp\\1_0_temp.wav") or result.outputs["tts_segments"][0][
         "output_path"

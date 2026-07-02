@@ -13,6 +13,7 @@ from eistara.core.timeline import (
     TimelinePolicy,
     TimelinePreparationService,
 )
+from eistara.core.tts.segments import load_tts_segments
 
 from .audio_mix_timing import build_audio_mix_timing_plan
 from .background import prepare_v1_background_bed
@@ -43,9 +44,9 @@ class AudioMixPlanStageRunner:
             or context.artifacts.get("timeline_json")
         )
         if not segments_path:
-            tts_segments = context.task.get("tts_segments") or context.artifacts.get("tts_segments") or []
+            tts_segments = load_tts_segments(context)
             if not tts_segments:
-                return StageResult(status="skipped", skipped=True, warnings=["No dub_segments_json or tts_segments in task or artifacts"])
+                return StageResult(status="skipped", skipped=True, warnings=["No dub_segments_json, tts_segments, or tts_segments_json in task or artifacts"])
             output_dir = Path(context.task.get("output_dir") or context.job_dir / "output")
             tts_outputs = (
                 context.task.get("tts_outputs")

@@ -369,7 +369,8 @@ def test_tts_stage_runner_updates_scheduler_outputs(tmp_path: Path) -> None:
     state = json.loads((job_dir / STATE_FILE).read_text(encoding="utf-8"))
     assert state["completed_stages"][-1] == "tts"
     assert state["artifacts"]["tts_count"] == 2
-    assert sorted(state["artifacts"]["tts_outputs"]) == ["1", "2"]
+    assert state["artifacts"]["tts_outputs_count"] == 2
+    assert "tts_outputs" not in state["artifacts"]
     assert Path(state["artifacts"]["tts_audio_quality_report"]).exists()
     assert "tts_segments" not in state["artifacts"]
     assert len(provider.calls) == 2
@@ -394,6 +395,30 @@ def test_tts_stage_runner_writes_audio_quality_report(tmp_path: Path) -> None:
     assert data["summary"]["segment_count"] == 1
     assert data["segments"][0]["segment_id"] == "1"
     assert data["segments"][0]["audio_path"].endswith("1_0_temp.wav")
+
+
+def test_tts_stage_runner_reads_tts_segments_json(tmp_path: Path) -> None:
+    segments_json = tmp_path / "output" / "internal" / "tts_segments.json"
+    segments_json.parent.mkdir(parents=True)
+    segments_json.write_text(
+        json.dumps({"segments": [{"id": "1", "text": "hello", "output_path": "output/audio/tmp/1_0_temp.wav"}]}),
+        encoding="utf-8",
+    )
+    provider = ScriptedTtsProvider(payload=_tone_wav_bytes())
+    runner = TtsStageRunner(provider)
+
+    result = runner.run(
+        StageContext(
+            "job",
+            tmp_path,
+            {"tts_segments_json": str(segments_json)},
+            StageName.TTS,
+            1,
+        )
+    )
+
+    assert result.outputs["tts_count"] == 1
+    assert [call.text for call in provider.calls] == ["hello"]
 
 
 def test_tts_stage_runner_passes_job_scoped_output_dir_to_provider(tmp_path: Path) -> None:
@@ -589,9 +614,46 @@ def test_tts_prepare_stage_runner_writes_v1_task_sheet(tmp_path: Path) -> None:
     assert row["text"] == "浣犲ソ"
     assert row["origin"] == "Hello world"
     assert result.outputs["tts_segments_count"] == 1
+    tts_segments_json = Path(result.outputs["tts_segments_json"])
+    assert tts_segments_json == tmp_path / "output" / "internal" / "tts_segments.json"
+    assert json.loads(tts_segments_json.read_text(encoding="utf-8"))["segments"][0]["text"] == result.outputs["tts_segments"][0]["text"]
     assert result.outputs["tts_segments"][0]["output_path"].endswith("output\\audio\\tmp\\1_0_temp.wav") or result.outputs[
         "tts_segments"
     ][0]["output_path"].endswith("output/audio/tmp/1_0_temp.wav")
+
+
+def test_tts_prepare_stage_runner_reads_tts_segments_json(tmp_path: Path) -> None:
+    input_json = tmp_path / "input_tts_segments.json"
+    input_json.write_text(
+        json.dumps(
+            {
+                "segments": [
+                    {
+                        "id": 1,
+                        "start": 0.0,
+                        "end": 1.0,
+                        "source": "Source",
+                        "text": "hello",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = TtsPrepareStageRunner().run(
+        StageContext(
+            "job",
+            tmp_path,
+            {"output_dir": str(tmp_path / "output"), "tts_segments_json": str(input_json)},
+            StageName.TTS_PREPARE,
+            1,
+        )
+    )
+
+    assert result.outputs["tts_segments_count"] == 1
+    assert Path(result.outputs["tts_segments_json"]).exists()
+    assert result.outputs["tts_segments"][0]["text"] == "hello"
 
 
 def test_tts_prepare_stage_runner_expands_v1_lines_to_tts_segments(tmp_path: Path) -> None:

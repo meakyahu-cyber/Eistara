@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import eistara.core.diagnostics.loader as diagnostics_loader
 from eistara.core.jobs import JsonJobStore, JobStatus, StageName
 from eistara.core.jobs.store import STATE_FILE, TASK_FILE
 from eistara.core.pipeline import StageContext, StageResult
@@ -108,6 +109,32 @@ def test_job_store_reads_utf8_sig_state(tmp_path: Path) -> None:
     assert job.state.job_id == "job_0001_test"
 
 
+def test_job_store_compacts_heavy_state_artifacts(tmp_path: Path) -> None:
+    jobs_dir = tmp_path / "jobs"
+    write_job(jobs_dir)
+    segments_json = tmp_path / "jobs" / "job_0001_test" / "output" / "internal" / "tts_segments.json"
+    JsonJobStore(jobs_dir).mark_done(
+        "job_0001_test",
+        StageName.TRANSLATE,
+        {
+            "tts_segments": [{"id": "1"}, {"id": "2"}],
+            "tts_segments_json": str(segments_json),
+            "translations": {1: "hello", 2: "world"},
+            "small_value": "kept",
+        },
+    )
+
+    state = json.loads((jobs_dir / "job_0001_test" / STATE_FILE).read_text(encoding="utf-8"))
+    artifacts = state["artifacts"]
+    assert artifacts["tts_segments_json"] == str(segments_json)
+    assert artifacts["tts_segments_count"] == 2
+    assert artifacts["translations_count"] == 2
+    assert artifacts["small_value"] == "kept"
+    assert "tts_segments" not in artifacts
+    assert "translations" not in artifacts
+    assert artifacts["_omitted_inline_artifacts"] == ["tts_segments", "translations"]
+
+
 def test_scheduler_runs_registered_stage(tmp_path: Path) -> None:
     jobs_dir = tmp_path / "jobs"
     write_job(jobs_dir)
@@ -120,6 +147,41 @@ def test_scheduler_runs_registered_stage(tmp_path: Path) -> None:
     assert job.state.status == JobStatus.PENDING
     assert job.state.completed_stages == [StageName.DOWNLOAD]
     assert job.state.artifacts["ok"] is True
+
+
+def test_scheduler_notifies_local_diagnostics_hook(tmp_path: Path, monkeypatch) -> None:
+    jobs_dir = tmp_path / "jobs"
+    job_dir = write_job(jobs_dir)
+    hook_dir = tmp_path / "diagnostics"
+    hook_dir.mkdir()
+    (hook_dir / "diag_hook.py").write_text(
+        "\n".join(
+            [
+                "import json",
+                "",
+                "def on_stage_finished(context, result):",
+                "    (context.job_dir / 'diagnostic_event.json').write_text(",
+                "        json.dumps({'job_id': context.job_id, 'stage': context.stage.value, 'status': result.status}),",
+                "        encoding='utf-8',",
+                "    )",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("EISTARA_DIAGNOSTICS_MODULE", "diag_hook")
+    monkeypatch.setenv("EISTARA_DIAGNOSTICS_PATH", str(hook_dir))
+    diagnostics_loader._HOOK = None
+
+    try:
+        service = SchedulerService(jobs_dir)
+        service.register(FakeDownloadRunner())
+
+        assert service.run_one_ready_stage() is True
+    finally:
+        diagnostics_loader._HOOK = None
+
+    event = json.loads((job_dir / "diagnostic_event.json").read_text(encoding="utf-8"))
+    assert event == {"job_id": "job_0001_test", "stage": "download", "status": "done"}
 
 
 def test_scheduler_can_run_multiple_registered_stages(tmp_path: Path) -> None:

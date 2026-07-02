@@ -69,6 +69,9 @@ The codebase is split around stable workflow boundaries:
   lightweight quality gate runner.
 - `eistara.core.observability`: JSONL job events for stage start, finish,
   retry, failure, outputs, errors, and duration tracking.
+- `eistara.core.diagnostics`: optional local diagnostics hook loaded from
+  environment variables for stage-finished and stage-failed observations. It is
+  a no-op by default and should not be used for core workflow behavior.
 - `eistara.runtime.pipeline`: production scheduler assembly. `production` wires
   configured source acquisition, ASR, LLM, TTS, dubbing, and ffmpeg adapters.
 - `apps.webui`: minimal Streamlit operations UI for Eistara jobs, health,
@@ -104,3 +107,23 @@ python -m apps.cli.main quality check --translations-json .\work\demo_output\int
 
 The runtime CLI now exposes the production pipeline only; lightweight scheduler
 tests use test-local runners instead of public no-op presets.
+
+## Local Diagnostics
+
+Eistara keeps large handoff data, such as TTS segments, in files under
+`output/internal` and stores compact counts plus artifact paths in `state.json`.
+For example, later stages can recover TTS input from
+`output/internal/tts_segments.json` even when inline `tts_segments` were omitted
+from persisted job state.
+
+Local diagnostics hooks are optional and disabled by default. Set these
+environment variables to load a local module without changing the main pipeline:
+
+```powershell
+$env:EISTARA_DIAGNOSTICS_PATH = ".\.local_diagnostics"
+$env:EISTARA_DIAGNOSTICS_MODULE = "my_hook"
+```
+
+The hook module may expose `on_stage_finished(context, result)` and/or
+`on_stage_failed(context, error, result=None)`. Hook failures are swallowed so
+diagnostics cannot break normal job execution.

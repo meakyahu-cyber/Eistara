@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from time import monotonic
 
+from eistara.core.diagnostics import StageDiagnosticContext, notify_stage_failed, notify_stage_finished
 from eistara.core.jobs import JsonJobStore, JobStatus, StageName
 from eistara.core.jobs.models import Job
 from eistara.core.manifest import JsonManifestStore
@@ -134,6 +135,8 @@ class SchedulerService:
         if not self.stage_run_matches(job_id, stage, stage_run_token):
             return StageResult(status="skipped", skipped=True, warnings=["Stage run token no longer matches"])
         job = self.job_store.load(job_id)
+        result = StageResult(status="retrying" if attempt <= self.max_stage_retries else "failed", warnings=[error])
+        diagnostic_context = _diagnostic_context(job, stage, attempt, duration_sec, log_path)
         if attempt <= self.max_stage_retries:
             state = job.state
             state.status = JobStatus.PENDING
@@ -155,7 +158,8 @@ class SchedulerService:
                     error=error,
                 )
             )
-            return StageResult(status="retrying", warnings=[error])
+            notify_stage_failed(diagnostic_context, error, result)
+            return result
         self.job_store.mark_failed(job_id, stage, error)
         self.manifest_store.mark_finished(job.job_dir, job.task, stage, "failed", error=error, log_path=log_path)
         self.event_store.append(
@@ -169,7 +173,8 @@ class SchedulerService:
                 error=error,
             )
         )
-        return StageResult(status="failed", warnings=[error])
+        notify_stage_failed(diagnostic_context, error, result)
+        return result
 
     def finish_stage_result(
         self,
@@ -202,6 +207,7 @@ class SchedulerService:
                     error=error,
                 )
             )
+            notify_stage_failed(_diagnostic_context(job, stage, attempt, duration_sec, log_path), error, result)
             return result
         state = self.job_store.mark_done(job_id, stage, result.outputs)
         self.manifest_store.mark_finished(job.job_dir, job.task, stage, status, outputs=result.outputs, log_path=log_path)
@@ -216,6 +222,7 @@ class SchedulerService:
                 outputs=result.outputs,
             )
         )
+        notify_stage_finished(_diagnostic_context(job, stage, attempt, duration_sec, log_path), result)
         if state.status == JobStatus.DONE and bool(job.task.get("archive_on_done", True)):
             self.job_store.archive_done(job_id)
         return result
@@ -365,3 +372,16 @@ class SchedulerService:
             log_path=log_path,
             stage_run_token=job.state.stage_run_token or "",
         )
+
+
+def _diagnostic_context(job: Job, stage: StageName, attempt: int, duration_sec: float, log_path: Path | None) -> StageDiagnosticContext:
+    return StageDiagnosticContext(
+        job_id=job.job_id,
+        job_dir=job.job_dir,
+        task=dict(job.task),
+        artifacts=dict(job.state.artifacts),
+        stage=stage,
+        attempt=attempt,
+        duration_sec=duration_sec,
+        log_path=log_path,
+    )

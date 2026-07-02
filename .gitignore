@@ -12,6 +12,8 @@ config.local.yaml
 config.yaml
 .env
 .env.*
+.local_diagnostics/
+local_tools/diagnostics/
 
 # Runtime outputs and job data
 /work/
@@ -39,3 +41,4 @@ config.yaml
 
 # Logs
 *.log
+**/output/log/diagnostics/

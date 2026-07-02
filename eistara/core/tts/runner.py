@@ -19,6 +19,7 @@ from .service import TtsService
 from .audio import wav_duration_sec
 from .cache import cache_meta_path
 from .pacing_quality import analyze_segment_pacing, build_pacing_quality_plan, retry_improved_pacing
+from .segments import load_tts_segments
 
 
 @dataclass(slots=True)
@@ -29,9 +30,9 @@ class TtsStageRunner:
     stage: StageName = StageName.TTS
 
     def run(self, context: StageContext) -> StageResult:
-        segments = context.task.get("tts_segments") or context.artifacts.get("tts_segments") or []
+        segments = load_tts_segments(context)
         if not segments:
-            return StageResult(status="skipped", skipped=True, warnings=["No tts_segments in task or artifacts"])
+            return StageResult(status="skipped", skipped=True, warnings=["No tts_segments or tts_segments_json in task or artifacts"])
 
         output_dir = _resolve_output_dir(context)
         settings = self.settings

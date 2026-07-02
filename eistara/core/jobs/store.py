@@ -51,9 +51,17 @@ ARTIFACT_KEYS_BY_STAGE: dict[StageName, set[str]] = {
         "translations_json",
         "translation_items",
         "tts_segments",
+        "tts_segments_json",
         "tts_segments_count",
     },
-    StageName.TTS_PREPARE: {"tts_segments", "tts_segments_count", "tts_tasks", "reference_audio_dir", "micro_tts_line_merge_report"},
+    StageName.TTS_PREPARE: {
+        "tts_segments",
+        "tts_segments_json",
+        "tts_segments_count",
+        "tts_tasks",
+        "reference_audio_dir",
+        "micro_tts_line_merge_report",
+    },
     StageName.TTS: {"tts_outputs", "tts_count", "tts_durations", "tts_audio_quality_report"},
     StageName.AUDIO_MIX: {
         "audio_mix_plan",
@@ -69,6 +77,20 @@ ARTIFACT_KEYS_BY_STAGE: dict[StageName, set[str]] = {
     StageName.COMPOSE: {"compose_plan", "dub_video", "video_render_command", "video_render_returncode"},
 }
 
+INLINE_HEAVY_ARTIFACT_KEYS = {
+    "segments",
+    "subtitle_rows",
+    "translations",
+    "translation_items",
+    "tts_segments",
+    "tts_outputs",
+    "tts_durations",
+    "audio_render_command",
+    "video_render_command",
+}
+
+MAX_INLINE_ARTIFACT_JSON_CHARS = 4000
+
 
 def _read_json(path: Path, default: Any) -> Any:
     try:
@@ -82,6 +104,50 @@ def _write_json_atomic(path: Path, data: Any) -> None:
     temp_path = path.with_suffix(path.suffix + ".tmp")
     temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(temp_path, path)
+
+
+def _state_to_persisted_dict(state: JobState) -> dict[str, Any]:
+    data = state.to_dict()
+    data["artifacts"] = _compact_state_artifacts(state.artifacts)
+    return data
+
+
+def _compact_state_artifacts(artifacts: dict[str, Any]) -> dict[str, Any]:
+    compacted: dict[str, Any] = {}
+    omitted: list[str] = []
+    for key, value in artifacts.items():
+        if key == "_omitted_inline_artifacts":
+            continue
+        if key in INLINE_HEAVY_ARTIFACT_KEYS:
+            _add_artifact_count(compacted, key, value)
+            omitted.append(key)
+            continue
+        if _is_small_state_artifact(value):
+            compacted[key] = value
+            continue
+        _add_artifact_count(compacted, key, value)
+        omitted.append(key)
+    if omitted:
+        compacted["_omitted_inline_artifacts"] = omitted
+    return compacted
+
+
+def _is_small_state_artifact(value: Any) -> bool:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return True
+    try:
+        text = json.dumps(value, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return False
+    return len(text) <= MAX_INLINE_ARTIFACT_JSON_CHARS
+
+
+def _add_artifact_count(target: dict[str, Any], key: str, value: Any) -> None:
+    count_key = f"{key}_count"
+    if count_key in target:
+        return
+    if isinstance(value, (list, tuple, set, dict)):
+        target[count_key] = len(value)
 
 
 def history_dir_for_jobs(jobs_dir: str | os.PathLike[str]) -> Path:
@@ -135,7 +201,7 @@ class JsonJobStore:
 
     def save_state(self, job_id: str, state: JobState) -> None:
         state.updated_at = utc_now_iso()
-        _write_json_atomic(self.jobs_dir / job_id / STATE_FILE, state.to_dict())
+        _write_json_atomic(self.jobs_dir / job_id / STATE_FILE, _state_to_persisted_dict(state))
 
     def next_stage(self, state: JobState) -> StageName | None:
         completed = set(state.completed_stages)

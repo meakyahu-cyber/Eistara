@@ -13,6 +13,7 @@ from eistara.core.jobs.models import StageName
 from eistara.core.pipeline import StageContext, StageResult
 from eistara.core.subtitle import parse_time_seconds
 from eistara.core.tts.reference_audio import extract_reference_audio_segments
+from eistara.core.tts.segments import load_tts_segments, write_tts_segments_json
 
 
 @dataclass(slots=True)
@@ -21,7 +22,7 @@ class TtsPrepareStageRunner:
     stage: StageName = StageName.TTS_PREPARE
 
     def run(self, context: StageContext) -> StageResult:
-        segments = context.task.get("tts_segments") or context.artifacts.get("tts_segments") or []
+        segments = load_tts_segments(context)
         output_dir = _resolve_output_dir(context)
         if not segments:
             segments = _segments_from_v1_audio_subtitles(context, output_dir)
@@ -46,9 +47,11 @@ class TtsPrepareStageRunner:
         warnings = _extract_reference_audio(context, output_dir, reference_audio_dir, tts_tasks)
 
         normalized_segments = _normalized_segments_from_task_sheet(tts_tasks, output_dir)
+        tts_segments_json = write_tts_segments_json(output_dir, normalized_segments)
         return StageResult(
             outputs={
                 "tts_segments": normalized_segments,
+                "tts_segments_json": str(tts_segments_json),
                 "tts_segments_count": len(normalized_segments),
                 "tts_tasks": str(tts_tasks),
                 "reference_audio_dir": str(reference_audio_dir),

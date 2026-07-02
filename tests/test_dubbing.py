@@ -290,6 +290,41 @@ def test_audio_mix_plan_stage_runner_prepares_timeline_from_tts_segments(tmp_pat
     assert Path(result.outputs["dub_segments_json"]) == tmp_path / "output" / "internal" / "dub_segments.json"
 
 
+def test_audio_mix_plan_stage_runner_reads_tts_segments_json(tmp_path: Path) -> None:
+    segments_json = tmp_path / "output" / "internal" / "tts_segments.json"
+    segments_json.parent.mkdir(parents=True)
+    segments_json.write_text(
+        json.dumps(
+            {
+                "segments": [
+                    {
+                        "id": "1",
+                        "start": 0,
+                        "end": 1,
+                        "text": "hello",
+                        "output_path": "a.wav",
+                        "audio_duration_sec": 1,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = AudioMixPlanStageRunner().run(
+        StageContext(
+            job_id="job",
+            job_dir=tmp_path,
+            task={"output_dir": str(tmp_path / "output"), "tts_segments_json": str(segments_json)},
+            stage=StageName.AUDIO_MIX,
+            attempt=1,
+        )
+    )
+
+    assert result.outputs["clip_count"] == 1
+    assert Path(result.outputs["dub_segments_json"]) == tmp_path / "output" / "internal" / "dub_segments.json"
+
+
 def test_audio_mix_plan_stage_runner_writes_v1_new_sub_times(tmp_path: Path) -> None:
     tts_tasks = tmp_path / "output" / "audio" / "tts_tasks.xlsx"
     tts_tasks.parent.mkdir(parents=True)
