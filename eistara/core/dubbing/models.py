@@ -14,10 +14,19 @@ class AudioClipPlacement:
     start_sec: float
     end_sec: float
     gain_db: float = 0.0
+    speed: float = 1.0
 
     @property
     def duration_sec(self) -> float:
         return max(0.0, float(self.end_sec) - float(self.start_sec))
+
+    @property
+    def effective_duration_sec(self) -> float:
+        return self.duration_sec / max(1.0, float(self.speed))
+
+    @property
+    def effective_end_sec(self) -> float:
+        return float(self.start_sec) + self.effective_duration_sec
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -26,6 +35,9 @@ class AudioClipPlacement:
             "start_sec": self.start_sec,
             "end_sec": self.end_sec,
             "duration_sec": self.duration_sec,
+            "speed": self.speed,
+            "effective_duration_sec": self.effective_duration_sec,
+            "effective_end_sec": self.effective_end_sec,
             "gain_db": self.gain_db,
         }
 
@@ -47,6 +59,7 @@ class AudioMixPlan:
     clip_fade_in_ms: int = 5
     clip_fade_out_ms: int = 220
     clip_tail_pad_ms: int = 220
+    clip_tail_pad_counts_in_timeline: bool = False
     clip_tail_cleanup: bool = True
     clip_tail_cleanup_ms: int = 420
     clip_tail_cleanup_lowpass_hz: int = 3600
@@ -68,6 +81,7 @@ class AudioMixPlan:
             "clip_fade_in_ms": self.clip_fade_in_ms,
             "clip_fade_out_ms": self.clip_fade_out_ms,
             "clip_tail_pad_ms": self.clip_tail_pad_ms,
+            "clip_tail_pad_counts_in_timeline": self.clip_tail_pad_counts_in_timeline,
             "clip_tail_cleanup": self.clip_tail_cleanup,
             "clip_tail_cleanup_ms": self.clip_tail_cleanup_ms,
             "clip_tail_cleanup_lowpass_hz": self.clip_tail_cleanup_lowpass_hz,

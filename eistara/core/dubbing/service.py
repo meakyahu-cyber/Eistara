@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,12 +24,13 @@ class DubbingRenderService:
     clip_fade_in_ms: int = 5
     clip_fade_out_ms: int = 220
     clip_tail_pad_ms: int = 220
+    clip_tail_pad_counts_in_timeline: bool = False
     clip_tail_cleanup: bool = True
     clip_tail_cleanup_ms: int = 420
     clip_tail_cleanup_lowpass_hz: int = 3600
     publish_global_audio_speed: bool = True
-    publish_target_video_speed_min: float = 0.88
-    publish_max_audio_speed: float = 1.22
+    publish_target_video_speed_min: float = 0.90
+    publish_max_audio_speed: float = 1.10
     publish_short_video_speed_max: float = 1.05
     publish_short_video_speed_hard_max: float = 1.08
 
@@ -41,6 +43,7 @@ class DubbingRenderService:
         output_duration_sec: float | None = None,
         pre_speed_duration_sec: float | None = None,
         global_audio_speed: float = 1.0,
+        clip_speeds: Mapping[str, float] | None = None,
     ) -> AudioMixPlan:
         return build_audio_mix_plan(
             timeline,
@@ -54,11 +57,13 @@ class DubbingRenderService:
             output_duration_sec=output_duration_sec,
             pre_speed_duration_sec=pre_speed_duration_sec,
             global_audio_speed=global_audio_speed,
+            clip_speeds=clip_speeds,
             clip_lowpass_hz=self.clip_lowpass_hz,
             clip_peak_normalize_dbfs=self.clip_peak_normalize_dbfs,
             clip_fade_in_ms=self.clip_fade_in_ms,
             clip_fade_out_ms=self.clip_fade_out_ms,
             clip_tail_pad_ms=self.clip_tail_pad_ms,
+            clip_tail_pad_counts_in_timeline=self.clip_tail_pad_counts_in_timeline,
             clip_tail_cleanup=self.clip_tail_cleanup,
             clip_tail_cleanup_ms=self.clip_tail_cleanup_ms,
             clip_tail_cleanup_lowpass_hz=self.clip_tail_cleanup_lowpass_hz,
@@ -97,17 +102,20 @@ def build_audio_mix_plan(
     output_duration_sec: float | None = None,
     pre_speed_duration_sec: float | None = None,
     global_audio_speed: float = 1.0,
+    clip_speeds: Mapping[str, float] | None = None,
     clip_lowpass_hz: int = 6800,
     clip_peak_normalize_dbfs: float | None = -3.0,
     clip_fade_in_ms: int = 5,
     clip_fade_out_ms: int = 220,
     clip_tail_pad_ms: int = 220,
+    clip_tail_pad_counts_in_timeline: bool = False,
     clip_tail_cleanup: bool = True,
     clip_tail_cleanup_ms: int = 420,
     clip_tail_cleanup_lowpass_hz: int = 3600,
 ) -> AudioMixPlan:
     clips: list[AudioClipPlacement] = []
     warnings: list[str] = list(timeline.warnings)
+    speeds = {str(key): max(1.0, float(value)) for key, value in dict(clip_speeds or {}).items()}
     for segment in timeline.segments:
         if segment.audio_path is None:
             warnings.append(f"{segment.segment_id}: skipped missing audio path")
@@ -119,9 +127,10 @@ def build_audio_mix_plan(
                 start_sec=segment.dub_start_sec,
                 end_sec=segment.dub_start_sec + segment.audio_duration_sec,
                 gain_db=clip_gain_db,
+                speed=speeds.get(str(segment.segment_id), 1.0),
             )
         )
-    source_duration = max(timeline.duration_sec, max((clip.end_sec for clip in clips), default=0.0))
+    source_duration = max(timeline.duration_sec, max((clip.effective_end_sec for clip in clips), default=0.0))
     duration = float(output_duration_sec) if output_duration_sec is not None else source_duration
     return AudioMixPlan(
         clips=tuple(clips),
@@ -139,6 +148,7 @@ def build_audio_mix_plan(
         clip_fade_in_ms=clip_fade_in_ms,
         clip_fade_out_ms=clip_fade_out_ms,
         clip_tail_pad_ms=clip_tail_pad_ms,
+        clip_tail_pad_counts_in_timeline=clip_tail_pad_counts_in_timeline,
         clip_tail_cleanup=clip_tail_cleanup,
         clip_tail_cleanup_ms=clip_tail_cleanup_ms,
         clip_tail_cleanup_lowpass_hz=clip_tail_cleanup_lowpass_hz,

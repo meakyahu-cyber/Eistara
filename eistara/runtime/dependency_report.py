@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from eistara.adapters.asr.audio_separator import audio_separator_model_status
 from eistara.config import AppConfig
 from eistara.core.subtitle.nlp_split import DEFAULT_SPACY_MODEL_MAP
 
@@ -212,37 +211,19 @@ def _asr_items(config: AppConfig, project_root: Path) -> list[ModelDependencyIte
 def _vocal_separation_items(config: AppConfig, project_root: Path) -> list[ModelDependencyItem]:
     items: list[ModelDependencyItem] = []
     enabled = bool(config.demucs.enabled)
-    provider = str(config.demucs.provider or "demucs").strip().lower()
-    if provider == "demucs":
-        demucs_version = _package_version("demucs")
-        cache_files = _demucs_cache_files()
-        items.append(
-            ModelDependencyItem(
-                component="vocal_separation",
-                dependency="Demucs htdemucs",
-                mode="local-cache",
-                required=enabled,
-                ok=bool(demucs_version and cache_files),
-                status="cached" if cache_files else "cache missing; Demucs may download on first use",
-                detail=f"{len(cache_files)} candidate checkpoint(s)",
-                path="; ".join(str(path) for path in cache_files[:3]),
-                version=demucs_version,
-            )
-        )
-    model_dir = _resolve_project_path(config.demucs.audio_separator_model_dir, project_root)
-    model = audio_separator_model_status(model_filename=config.demucs.audio_separator_model, model_dir=model_dir)
-    selected = provider in {"audio-separator", "audio_separator", "mdx", "uvr-mdx"}
+    demucs_version = _package_version("demucs")
+    cache_files = _demucs_cache_files()
     items.append(
         ModelDependencyItem(
             component="vocal_separation",
-            dependency=f"UVR-MDX / audio-separator ({config.demucs.audio_separator_model})",
+            dependency="Demucs htdemucs",
             mode="local-cache",
-            required=enabled and selected,
-            ok=bool(model["exists"] and model["valid"] is not False),
-            status="cached" if model["exists"] and model["valid"] is not False else "missing or invalid",
-            detail=f"selected={selected}; onnxruntime={_package_version('onnxruntime') or 'missing'}; onnxruntime-gpu={_package_version('onnxruntime-gpu') or 'missing'}",
-            path=str(model["path"]),
-            version=_package_version("audio-separator"),
+            required=enabled,
+            ok=bool(demucs_version and cache_files),
+            status="cached" if cache_files else "cache missing; Demucs may download on first use",
+            detail=f"{len(cache_files)} candidate checkpoint(s)",
+            path="; ".join(str(path) for path in cache_files[:3]),
+            version=demucs_version,
         )
     )
     return items

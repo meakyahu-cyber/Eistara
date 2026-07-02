@@ -55,7 +55,6 @@ python setup_env.py --torch cu128
 - ASR：`Systran/faster-whisper-large-v3`
 - 中文 ASR 可选：`Huan69/Belle-whisper-large-v3-zh-punct-fasterwhisper`
 - 人声分离默认：Demucs `htdemucs`
-- UVR-MDX 可选：`UVR-MDX-NET-Voc_FT.onnx`
 
 默认使用 `hf-mirror.com` 和清华 PyPI 源以改善国内下载体验。TTS 模型不由 Eistara 下载或管理。
 

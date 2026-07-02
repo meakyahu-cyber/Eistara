@@ -139,6 +139,11 @@ def _quality_report(
     peak_dbfs = None if audio.max_dBFS == float("-inf") else round(float(audio.max_dBFS), 3)
     warnings: list[str] = []
 
+    if len(audio) <= 0:
+        warnings.append("TTS audio is empty")
+    elif peak_dbfs is None:
+        warnings.append("TTS audio is silent")
+
     if len(audio) > 0 and audio.dBFS != float("-inf"):
         try:
             from pydub.silence import detect_nonsilent, detect_silence

@@ -453,57 +453,45 @@ def test_webui_active_config_reports_write_path_and_api(tmp_path: Path) -> None:
     }
 
 
-def test_webui_reports_vocal_separation_model_status(monkeypatch, tmp_path: Path) -> None:
-    model_dir = tmp_path / "models" / "audio-separator"
-    model_dir.mkdir(parents=True)
-    model = model_dir / "custom.onnx"
-    model.write_bytes(b"model")
+def test_webui_reports_vocal_separation_model_status(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         "demucs:\n"
         "  enabled: true\n"
-        "  provider: audio-separator\n"
-        "  segment_minutes: 9\n"
-        "  audio_separator_model: custom.onnx\n"
-        f"  audio_separator_model_dir: {model_dir.as_posix()}\n",
+        "  segment_minutes: 9\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(webui_backend, "_onnxruntime_providers", lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"])
     backend = WebUiBackend(WebUiSettings(tmp_path / "jobs", config_path=config_path))
 
     status = backend.vocal_separation_status()
 
+    assert set(status) == {"enabled", "provider", "segment_minutes"}
     assert status["enabled"] is True
-    assert status["provider"] == "audio-separator"
+    assert status["provider"] == "demucs"
     assert status["segment_minutes"] == 9
-    assert status["audio_separator_model_exists"] is True
-    assert status["audio_separator_model_size"] == len(b"model")
-    assert status["audio_separator_model_valid"] is None
-    assert status["onnx_cuda"] is True
 
 
-def test_webui_diagnostic_summary_includes_vocal_separation(monkeypatch, tmp_path: Path) -> None:
+def test_webui_diagnostic_summary_includes_vocal_separation(tmp_path: Path) -> None:
     jobs_dir = tmp_path / "jobs"
     write_job(jobs_dir)
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         "demucs:\n"
         "  enabled: true\n"
-        "  provider: audio-separator\n"
-        "  audio_separator_model: missing.onnx\n"
-        f"  audio_separator_model_dir: {(tmp_path / 'models').as_posix()}\n",
+        "  segment_minutes: 9\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(webui_backend, "_onnxruntime_providers", lambda: ["CPUExecutionProvider"])
     backend = WebUiBackend(WebUiSettings(jobs_dir, config_path=config_path))
 
     summary = backend.job_diagnostic_summary("job_0001_webui")
     text = backend.job_diagnostic_text("job_0001_webui")
 
-    assert summary["config"]["vocal_separation"]["provider"] == "audio-separator"
-    assert summary["config"]["vocal_separation"]["audio_separator_model_exists"] is False
-    assert "vocal_separation: enabled=True; provider=audio-separator" in text
-    assert "onnx_cuda=False" in text
+    assert summary["config"]["vocal_separation"] == {
+        "enabled": True,
+        "provider": "demucs",
+        "segment_minutes": 9,
+    }
+    assert "vocal_separation: enabled=True; provider=demucs; segment_minutes=9" in text
 
 
 def test_webui_single_job_runs_until_requested_stage(monkeypatch, tmp_path: Path) -> None:

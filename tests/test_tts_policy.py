@@ -8,6 +8,7 @@ import struct
 import wave
 
 import pandas as pd
+import pytest
 
 from eistara.core.jobs import StageName
 from eistara.core.jobs.store import STATE_FILE, TASK_FILE
@@ -15,7 +16,6 @@ from eistara.core.media import AudioStreamInfo, MediaInfo
 from eistara.core.pipeline import StageContext
 from eistara.core.scheduler import SchedulerService
 from eistara.core.tts.audio import wav_duration_sec
-from eistara.core.tts.speed import v1_slow_fast_speed_factor
 from eistara.core.tts import (
     ScriptedTtsProvider,
     TtsCachePolicy,
@@ -41,7 +41,7 @@ class FakeMediaProbe:
 
 class ProbeableScriptedTtsProvider(ScriptedTtsProvider):
     def __init__(self, failures: list[Exception] | None = None):
-        super().__init__(failures=failures)
+        super().__init__(failures=failures, payload=_tone_wav_bytes())
         self.ready_checks = 0
 
     def check_ready(self, settings: TtsSettings) -> None:
@@ -50,12 +50,26 @@ class ProbeableScriptedTtsProvider(ScriptedTtsProvider):
 
 class CapturingPrepareSettingsTtsProvider(ScriptedTtsProvider):
     def __init__(self):
-        super().__init__()
+        super().__init__(payload=_tone_wav_bytes())
         self.prepare_calls = []
 
     def prepare_settings(self, settings: TtsSettings, *, output_dir, reference_audio_dir=None) -> TtsSettings:
         self.prepare_calls.append((Path(output_dir), Path(reference_audio_dir) if reference_audio_dir else None))
         return settings
+
+
+class TextDurationTtsProvider:
+    name = "scripted"
+
+    def __init__(self, durations_by_text: dict[str, list[float]]):
+        self.durations_by_text = {key: list(value) for key, value in durations_by_text.items()}
+        self.calls: list[TtsRequest] = []
+
+    def synthesize(self, request: TtsRequest, settings: TtsSettings) -> None:
+        self.calls.append(request)
+        durations = self.durations_by_text.get(request.text)
+        duration = durations.pop(0) if durations else 0.2
+        _write_test_wav(request.output_path, duration_sec=duration)
 
 
 def test_clean_text_for_tts_folds_latin_diacritics() -> None:
@@ -143,8 +157,32 @@ def test_tts_cache_signature_ignores_runtime_paths_but_changes_with_prompt_audio
     assert first["signature"] != other_prompt["signature"]
 
 
+def test_indextts_cache_signature_changes_with_request_duration_control(tmp_path: Path) -> None:
+    output = tmp_path / "a.wav"
+    policy = TtsCachePolicy(TtsSettings(provider_config={"duration_control": {"enabled": False}}))
+
+    first = policy.build_metadata(
+        TtsRequest(
+            text="hello",
+            output_path=output,
+            metadata={"indextts_duration_control": {"enabled": True, "target_duration_sec": 0.66}},
+        ),
+        "hello",
+    )
+    second = policy.build_metadata(
+        TtsRequest(
+            text="hello",
+            output_path=output,
+            metadata={"indextts_duration_control": {"enabled": True, "target_duration_sec": 0.95}},
+        ),
+        "hello",
+    )
+
+    assert first["signature"] != second["signature"]
+
+
 def test_tts_service_writes_cache_and_skips_second_call(tmp_path: Path) -> None:
-    provider = ScriptedTtsProvider()
+    provider = ScriptedTtsProvider(payload=_tone_wav_bytes())
     service = TtsService(provider)
     request = TtsRequest(text="hello", output_path=tmp_path / "hello.wav")
 
@@ -173,8 +211,8 @@ def test_tts_service_adopts_legacy_audio_without_cache(tmp_path: Path) -> None:
     assert metadata["legacy_adopted"] is True
 
 
-def test_tts_service_writes_v1_silence_for_empty_or_single_char_text(tmp_path: Path) -> None:
-    provider = ScriptedTtsProvider()
+def test_tts_service_writes_v1_silence_for_empty_or_punctuation_text(tmp_path: Path) -> None:
+    provider = ScriptedTtsProvider(payload=_tone_wav_bytes())
     service = TtsService(provider)
     output = tmp_path / "silent.wav"
 
@@ -185,26 +223,39 @@ def test_tts_service_writes_v1_silence_for_empty_or_single_char_text(tmp_path: P
     duration = wav_duration_sec(output)
     assert duration is not None
     assert 0.09 <= duration <= 0.11
+    assert not cache_meta_path(output).exists()
+
+
+def test_tts_service_synthesizes_single_character_text(tmp_path: Path) -> None:
+    provider = ScriptedTtsProvider(payload=_tone_wav_bytes())
+    service = TtsService(provider)
+    output = tmp_path / "single.wav"
+
+    result = service.synthesize(TtsRequest(text="水。", output_path=output))
+
+    assert len(provider.calls) == 1
+    assert result.warnings == []
     assert cache_meta_path(output).exists()
 
 
-def test_tts_service_retries_zero_duration_then_writes_v1_silence(tmp_path: Path) -> None:
+def test_tts_service_retries_zero_duration_then_fails_without_placeholder_cache(tmp_path: Path) -> None:
     provider = ScriptedTtsProvider(payload=b"")
     service = TtsService(provider, TtsSettings(max_retries=2), sleep=lambda _seconds: None)
     output = tmp_path / "zero.wav"
 
-    result = service.synthesize(TtsRequest(text="hello", output_path=output))
+    try:
+        service.synthesize(TtsRequest(text="hello", output_path=output))
+    except TtsServiceError as exc:
+        assert "TTS failed after 2 attempts" in str(exc)
+    else:
+        raise AssertionError("expected TtsServiceError")
 
     assert len(provider.calls) == 2
-    assert result.warnings == ["zero-duration placeholder"]
-    duration = wav_duration_sec(output)
-    assert duration is not None
-    assert 0.09 <= duration <= 0.11
-    assert cache_meta_path(output).exists()
+    assert not cache_meta_path(output).exists()
 
 
 def test_tts_service_retries_service_errors(tmp_path: Path) -> None:
-    provider = ScriptedTtsProvider(failures=[TtsServiceError("down")])
+    provider = ScriptedTtsProvider(failures=[TtsServiceError("down")], payload=_tone_wav_bytes())
     sleeps: list[float] = []
     service = TtsService(provider, TtsSettings(max_retries=2, service_backoff_base_sec=0.01), sleep=sleeps.append)
 
@@ -229,7 +280,7 @@ def test_tts_service_reprobes_provider_after_service_error(tmp_path: Path) -> No
 
 
 def test_tts_service_corrects_text_only_on_final_content_retry(tmp_path: Path) -> None:
-    provider = ScriptedTtsProvider(failures=[TtsProviderError("bad text")])
+    provider = ScriptedTtsProvider(failures=[TtsProviderError("bad text")], payload=_tone_wav_bytes())
     service = TtsService(
         provider,
         TtsSettings(max_retries=2),
@@ -276,21 +327,6 @@ def test_tts_service_applies_v1_generated_audio_postprocess(tmp_path: Path) -> N
     assert processed.max_dBFS <= -5.9
 
 
-def test_v1_slow_fast_speed_factor_slows_fast_readability_segments() -> None:
-    config = {
-        "slow_fast_segments": True,
-        "slow_fast_trigger_units_per_sec": 5.75,
-        "slow_fast_target_units_per_sec": 5.4,
-        "slow_fast_max_duration_factor": 1.1,
-        "slow_fast_min_duration_sec": 1.2,
-    }
-
-    speed = v1_slow_fast_speed_factor("one two three four five six seven eight nine ten", 2.0, config)
-
-    assert speed == 0.909
-    assert v1_slow_fast_speed_factor("one two three four five six seven eight nine ten", 2.0, {**config, "slow_fast_segments": False}) == 1.0
-
-
 def test_tts_stage_runner_updates_scheduler_outputs(tmp_path: Path) -> None:
     jobs_dir = tmp_path / "jobs"
     job_dir = jobs_dir / "job_0001_tts"
@@ -325,7 +361,7 @@ def test_tts_stage_runner_updates_scheduler_outputs(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    provider = ScriptedTtsProvider()
+    provider = ScriptedTtsProvider(payload=_tone_wav_bytes())
     service = SchedulerService(jobs_dir)
     service.register(TtsStageRunner(provider))
 
@@ -340,7 +376,7 @@ def test_tts_stage_runner_updates_scheduler_outputs(tmp_path: Path) -> None:
 
 
 def test_tts_stage_runner_writes_audio_quality_report(tmp_path: Path) -> None:
-    runner = TtsStageRunner(ScriptedTtsProvider())
+    runner = TtsStageRunner(ScriptedTtsProvider(payload=_tone_wav_bytes()))
 
     result = runner.run(
         StageContext(
@@ -379,11 +415,101 @@ def test_tts_stage_runner_passes_job_scoped_output_dir_to_provider(tmp_path: Pat
     assert provider.calls[0].output_path == job_dir / "output" / "audio" / "tmp" / "1_0_temp.wav"
 
 
+def test_tts_stage_runner_does_not_apply_indextts_adaptive_retry_to_generic_provider(tmp_path: Path) -> None:
+    provider = ScriptedTtsProvider(payload=_tone_wav_bytes())
+    runner = TtsStageRunner(
+        provider,
+        TtsSettings(
+            provider_config={
+                "duration_control": {
+                    "enabled": False,
+                    "adaptive_source_window_retry": {
+                        "enabled": True,
+                        "target_scale": 1.0,
+                        "min_target_sec": 0.18,
+                    },
+                }
+            }
+        ),
+    )
+
+    result = runner.run(
+        StageContext(
+            "job",
+            tmp_path,
+            {
+                "tts_segments": [
+                    {"id": "1_0", "number": 1, "start": 0.0, "end": 2.0, "text": "你好", "output_path": "output/audio/tmp/1_0_temp.wav"},
+                    {"id": "1_1", "number": 1, "start": 0.0, "end": 2.0, "text": "世界很大", "output_path": "output/audio/tmp/1_1_temp.wav"},
+                ]
+            },
+            StageName.TTS,
+            1,
+        )
+    )
+
+    assert len(provider.calls) == 2
+    assert provider.calls[0].metadata == {}
+    assert provider.calls[1].metadata == {}
+    assert result.outputs["tts_provider_retry_count"] == 0
+
+
+def test_tts_stage_runner_retries_dragged_short_segments_with_global_pacing(tmp_path: Path) -> None:
+    provider = TextDurationTtsProvider(
+        {
+            "正常一句话": [1.0],
+            "地下水循环": [1.0],
+            "雨水向下渗透": [1.2],
+            "水": [0.9, 0.22],
+        }
+    )
+    runner = TtsStageRunner(
+        provider,
+        TtsSettings(
+            max_retries=1,
+            audio_config={
+                "postprocess_audio": False,
+                "pacing_quality_check": True,
+                "pacing_baseline_min_samples": 3,
+                "pacing_single_unit_max_active_sec": 0.7,
+            },
+        ),
+    )
+
+    result = runner.run(
+        StageContext(
+            "job",
+            tmp_path,
+            {
+                "tts_segments": [
+                    {"id": "1_0", "text": "正常一句话", "output_path": "output/audio/tmp/1_0_temp.wav"},
+                    {"id": "2_0", "text": "地下水循环", "output_path": "output/audio/tmp/2_0_temp.wav"},
+                    {"id": "3_0", "text": "雨水向下渗透", "output_path": "output/audio/tmp/3_0_temp.wav"},
+                    {"id": "4_0", "text": "水", "output_path": "output/audio/tmp/4_0_temp.wav"},
+                ]
+            },
+            StageName.TTS,
+            1,
+        )
+    )
+
+    assert [call.text for call in provider.calls] == ["正常一句话", "地下水循环", "雨水向下渗透", "水", "水"]
+    assert result.outputs["tts_pacing_retry_count"] == 1
+    assert result.outputs["tts_durations"]["4_0"] == pytest.approx(0.22)
+
+    report = json.loads(Path(result.outputs["tts_audio_quality_report"]).read_text(encoding="utf-8"))
+    assert report["summary"]["pacing_retry_count"] == 1
+    assert report["summary"]["pacing"]["baseline_sample_count"] == 3
+    pacing_retry = {row["segment_id"]: row["pacing_retry"] for row in report["segments"]}
+    assert pacing_retry["4_0"]["reason"] == "single_or_tiny_segment_dragged"
+    assert pacing_retry["4_0"]["retry"]["kept"] is True
+
+
 def test_tts_stage_runner_writes_real_duration_to_v1_task_sheet(tmp_path: Path) -> None:
     tts_tasks = tmp_path / "output" / "audio" / "tts_tasks.xlsx"
     tts_tasks.parent.mkdir(parents=True)
     pd.DataFrame([{"number": 1, "text": "hello"}]).to_excel(tts_tasks, index=False)
-    runner = TtsStageRunner(ScriptedTtsProvider(), media_probe=FakeMediaProbe(1.75))
+    runner = TtsStageRunner(ScriptedTtsProvider(payload=_tone_wav_bytes()), media_probe=FakeMediaProbe(1.75))
 
     result = runner.run(
         StageContext(
@@ -407,7 +533,7 @@ def test_tts_stage_runner_sums_line_durations_to_v1_task_sheet(tmp_path: Path) -
     tts_tasks = tmp_path / "output" / "audio" / "tts_tasks.xlsx"
     tts_tasks.parent.mkdir(parents=True)
     pd.DataFrame([{"number": 1, "text": "hello"}]).to_excel(tts_tasks, index=False)
-    runner = TtsStageRunner(ScriptedTtsProvider(), media_probe=FakeMediaProbe(1.75))
+    runner = TtsStageRunner(ScriptedTtsProvider(payload=_tone_wav_bytes()), media_probe=FakeMediaProbe(1.75))
 
     result = runner.run(
         StageContext(
@@ -651,6 +777,19 @@ def _write_test_wav(path: Path, duration_sec: float, sample_rate: int = 16000) -
         for index in range(frames):
             value = int(12000 * math.sin(2 * math.pi * 440 * index / sample_rate))
             handle.writeframes(struct.pack("<h", value))
+
+
+def _tone_wav_bytes(duration_sec: float = 0.2, sample_rate: int = 16000) -> bytes:
+    buffer = io.BytesIO()
+    frames = int(duration_sec * sample_rate)
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(sample_rate)
+        for index in range(frames):
+            value = int(12000 * math.sin(2 * math.pi * 440 * index / sample_rate))
+            handle.writeframes(struct.pack("<h", value))
+    return buffer.getvalue()
 
 
 def _audio_bytes(audio) -> bytes:

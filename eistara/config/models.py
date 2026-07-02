@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .constants import DEFAULT_PUBLISH_TIMELINE_MODE
+
 from eistara.core.translation import TranslationSettings
 from eistara.core.tts import TtsSettings
 
@@ -91,6 +93,10 @@ def _merge_source_provider_config(source: dict[str, Any], youtube: "YouTubeConfi
             if current in (None, "", 3):
                 result[key] = value
             continue
+        if key == "cookies_from_browser":
+            if current in (None, "", "auto", "default", "default_browser"):
+                result[key] = value
+            continue
         if current in (None, "", [], {}):
             result[key] = value
     return result
@@ -101,6 +107,8 @@ class ApiConfig:
     key: str = ""
     base_url: str = ""
     model: str = ""
+    llm_interface: str = "chat_completions"
+    llm_stream: bool = False
     llm_support_json: bool = True
     timeout_sec: float = 300.0
     user_agent: str = "curl/8.19.0"
@@ -116,6 +124,8 @@ class ApiConfig:
             key=_as_str(data.get("key")),
             base_url=_as_str(data.get("base_url")),
             model=_as_str(data.get("model")),
+            llm_interface=_as_str(data.get("llm_interface"), "chat_completions").strip().lower().replace("-", "_"),
+            llm_stream=_as_bool(data.get("llm_stream"), False),
             llm_support_json=_as_bool(data.get("llm_support_json"), True),
             timeout_sec=_as_float(data.get("timeout_sec"), 300.0),
             user_agent=_as_str(data.get("user_agent"), "curl/8.19.0"),
@@ -381,9 +391,6 @@ class RenderConfig:
 class DemucsConfig:
     enabled: bool = True
     segment_minutes: float = 30.0
-    provider: str = "demucs"
-    audio_separator_model: str = "UVR-MDX-NET-Voc_FT.onnx"
-    audio_separator_model_dir: Path = Path("./models/audio-separator")
 
     @classmethod
     def from_sections(cls, enabled: Any, segment_minutes: Any) -> "DemucsConfig":
@@ -393,9 +400,6 @@ class DemucsConfig:
         return cls(
             enabled=_as_bool(enabled_value, True),
             segment_minutes=_as_float(segment_minutes_value, 30.0),
-            provider=_as_str(section.get("provider"), "demucs").strip().lower(),
-            audio_separator_model=_as_str(section.get("audio_separator_model"), "UVR-MDX-NET-Voc_FT.onnx"),
-            audio_separator_model_dir=Path(_as_str(section.get("audio_separator_model_dir"), "./models/audio-separator")),
         )
 
 
@@ -418,6 +422,7 @@ class SubtitleConfig:
 class DubAudioConfig:
     bitrate: str = "192k"
     sample_rate: int = 24000
+    publish_timeline_mode: str = DEFAULT_PUBLISH_TIMELINE_MODE
     publish_lead_in_ms: int = 300
     publish_line_gap_ms: int = 180
     publish_row_gap_ms: int = 260
@@ -425,10 +430,16 @@ class DubAudioConfig:
     publish_min_source_gap_sec: float = 0.12
     publish_max_source_gap_sec: float = 6.0
     publish_preserve_short_source_windows: bool = False
+    publish_source_window_stretch_max: float = 1.10
+    publish_source_window_borrow_enabled: bool = True
+    publish_source_window_borrow_max_sec: float = 0.60
+    publish_source_window_borrow_max_ratio: float = 0.50
+    publish_source_window_borrow_min_seam_sec: float = 0.12
+    publish_source_window_retime_tier2_enabled: bool = False
     publish_tail_pad_ms: int = 500
     publish_global_audio_speed: bool = True
-    publish_target_video_speed_min: float = 0.88
-    publish_max_audio_speed: float = 1.22
+    publish_target_video_speed_min: float = 0.90
+    publish_max_audio_speed: float = 1.10
     publish_short_video_speed_max: float = 1.05
     publish_short_video_speed_hard_max: float = 1.08
     video_retime: bool = True
@@ -445,6 +456,11 @@ class DubAudioConfig:
     background_duck_transition_ms: int = 600
     background_duck_filter: bool = True
     background_duck_lowpass_hz: int = 4200
+    background_duck_adaptive: bool = True
+    background_duck_target_under_voice_db: float = 16.0
+    background_duck_high_coverage_under_voice_db: float = 14.0
+    background_duck_max_makeup_db: float = 12.0
+    background_duck_wideband_when_adaptive: bool = True
     source_bed_duck_volume: float = 0.12
     source_bed_lowpass_hz: int = 3600
     final_loudnorm: bool = True
@@ -463,6 +479,7 @@ class DubAudioConfig:
     tts_segment_fade_in_ms: int = 5
     tts_segment_fade_out_ms: int = 220
     tts_segment_tail_pad_ms: int = 220
+    tts_segment_tail_pad_counts_in_timeline: bool = False
     tts_segment_tail_cleanup: bool = True
     tts_segment_tail_cleanup_ms: int = 420
     tts_segment_tail_cleanup_lowpass_hz: int = 3600
@@ -472,6 +489,7 @@ class DubAudioConfig:
         return cls(
             bitrate=_as_str(data.get("bitrate"), "192k"),
             sample_rate=_as_int(data.get("sample_rate"), 24000),
+            publish_timeline_mode=_as_str(data.get("publish_timeline_mode"), DEFAULT_PUBLISH_TIMELINE_MODE),
             publish_lead_in_ms=_as_int(data.get("publish_lead_in_ms"), 300),
             publish_line_gap_ms=_as_int(data.get("publish_line_gap_ms"), 180),
             publish_row_gap_ms=_as_int(data.get("publish_row_gap_ms"), 260),
@@ -479,10 +497,16 @@ class DubAudioConfig:
             publish_min_source_gap_sec=_as_float(data.get("publish_min_source_gap_sec"), 0.12),
             publish_max_source_gap_sec=_as_float(data.get("publish_max_source_gap_sec"), 6.0),
             publish_preserve_short_source_windows=_as_bool(data.get("publish_preserve_short_source_windows"), False),
+            publish_source_window_stretch_max=_as_float(data.get("publish_source_window_stretch_max"), 1.10),
+            publish_source_window_borrow_enabled=_as_bool(data.get("publish_source_window_borrow_enabled"), True),
+            publish_source_window_borrow_max_sec=_as_float(data.get("publish_source_window_borrow_max_sec"), 0.60),
+            publish_source_window_borrow_max_ratio=_as_float(data.get("publish_source_window_borrow_max_ratio"), 0.50),
+            publish_source_window_borrow_min_seam_sec=_as_float(data.get("publish_source_window_borrow_min_seam_sec"), 0.12),
+            publish_source_window_retime_tier2_enabled=_as_bool(data.get("publish_source_window_retime_tier2_enabled"), False),
             publish_tail_pad_ms=_as_int(data.get("publish_tail_pad_ms"), 500),
             publish_global_audio_speed=_as_bool(data.get("publish_global_audio_speed"), True),
-            publish_target_video_speed_min=_as_float(data.get("publish_target_video_speed_min"), 0.88),
-            publish_max_audio_speed=_as_float(data.get("publish_max_audio_speed"), 1.22),
+            publish_target_video_speed_min=_as_float(data.get("publish_target_video_speed_min"), 0.90),
+            publish_max_audio_speed=_as_float(data.get("publish_max_audio_speed"), 1.10),
             publish_short_video_speed_max=_as_float(data.get("publish_short_video_speed_max"), 1.05),
             publish_short_video_speed_hard_max=_as_float(data.get("publish_short_video_speed_hard_max"), 1.08),
             video_retime=_as_bool(data.get("video_retime"), True),
@@ -499,6 +523,11 @@ class DubAudioConfig:
             background_duck_transition_ms=_as_int(data.get("background_duck_transition_ms"), 600),
             background_duck_filter=_as_bool(data.get("background_duck_filter"), True),
             background_duck_lowpass_hz=_as_int(data.get("background_duck_lowpass_hz"), 4200),
+            background_duck_adaptive=_as_bool(data.get("background_duck_adaptive"), True),
+            background_duck_target_under_voice_db=_as_float(data.get("background_duck_target_under_voice_db"), 16.0),
+            background_duck_high_coverage_under_voice_db=_as_float(data.get("background_duck_high_coverage_under_voice_db"), 14.0),
+            background_duck_max_makeup_db=_as_float(data.get("background_duck_max_makeup_db"), 12.0),
+            background_duck_wideband_when_adaptive=_as_bool(data.get("background_duck_wideband_when_adaptive"), True),
             source_bed_duck_volume=_as_float(data.get("source_bed_duck_volume"), 0.12),
             source_bed_lowpass_hz=_as_int(data.get("source_bed_lowpass_hz"), 3600),
             final_loudnorm=_as_bool(data.get("final_loudnorm"), True),
@@ -517,6 +546,7 @@ class DubAudioConfig:
             tts_segment_fade_in_ms=_as_int(data.get("tts_segment_fade_in_ms"), 5),
             tts_segment_fade_out_ms=_as_int(data.get("tts_segment_fade_out_ms"), 220),
             tts_segment_tail_pad_ms=_as_int(data.get("tts_segment_tail_pad_ms"), 220),
+            tts_segment_tail_pad_counts_in_timeline=_as_bool(data.get("tts_segment_tail_pad_counts_in_timeline"), False),
             tts_segment_tail_cleanup=_as_bool(data.get("tts_segment_tail_cleanup"), True),
             tts_segment_tail_cleanup_ms=_as_int(data.get("tts_segment_tail_cleanup_ms"), 420),
             tts_segment_tail_cleanup_lowpass_hz=_as_int(data.get("tts_segment_tail_cleanup_lowpass_hz"), 3600),
@@ -595,9 +625,6 @@ class AppConfig:
         provider_config.update(self.youtube.to_provider_config())
         provider_config["demucs"] = self.demucs.enabled
         provider_config["demucs_segment_minutes"] = self.demucs.segment_minutes
-        provider_config["vocal_separation_provider"] = self.demucs.provider
-        provider_config["audio_separator_model"] = self.demucs.audio_separator_model
-        provider_config["audio_separator_model_dir"] = str(self.demucs.audio_separator_model_dir)
         provider_config["model_dir"] = str(self.runtime.model_dir)
         provider_config["spacy_model_map"] = dict(self.runtime.spacy_model_map)
         provider_config["language_split_with_space"] = list(self.runtime.language_split_with_space)
@@ -620,27 +647,16 @@ class AppConfig:
         return TranslationSettings(
             source_language=source_language,
             target_language=self.target_language,
-            max_batch_lines=_as_int(self.translation.get("publish_fast_chunk_lines"), 30),
+            max_batch_lines=_as_int(self.translation.get("publish_fast_chunk_lines"), 20),
             max_batch_chars=_as_int(self.translation.get("publish_fast_chunk_chars"), 3000),
             use_summary=_as_bool(self.translation.get("publish_fast_use_summary"), True),
             summary_length=self.runtime.summary_length,
             enforce_latin=_as_bool(self.translation.get("enforce_latin"), True),
-            pacing_budget_enabled=_as_bool(self.translation.get("pacing_budget_enabled"), False),
-            estimated_tts_chars_per_sec=_as_float(self.translation.get("estimated_tts_chars_per_sec"), 4.4),
-            estimated_zh_chars_per_en_word=_as_float(self.translation.get("estimated_zh_chars_per_en_word"), 1.72),
-            min_zh_chars_per_en_word=_as_float(self.translation.get("min_zh_chars_per_en_word"), 1.67),
-            natural_min_zh_chars_per_en_word=_as_float(self.translation.get("natural_min_zh_chars_per_en_word"), 1.70),
-            natural_max_zh_chars_per_en_word=_as_float(self.translation.get("natural_max_zh_chars_per_en_word"), 1.72),
-            soft_pressure_max_zh_chars_per_en_word=_as_float(self.translation.get("soft_pressure_max_zh_chars_per_en_word"), 1.75),
-            hard_pressure_max_zh_chars_per_en_word=_as_float(self.translation.get("hard_pressure_max_zh_chars_per_en_word"), 1.73),
-            critical_pressure_max_zh_chars_per_en_word=_as_float(
-                self.translation.get("critical_pressure_max_zh_chars_per_en_word"), 1.70
-            ),
-            target_pacing_pressure=_as_float(self.translation.get("target_pacing_pressure"), 1.05),
-            soft_pacing_pressure=_as_float(self.translation.get("soft_pacing_pressure"), 1.10),
-            hard_pacing_pressure=_as_float(self.translation.get("hard_pacing_pressure"), 1.18),
-            critical_pacing_pressure=_as_float(self.translation.get("critical_pacing_pressure"), 1.25),
-            min_pacing_source_sec=_as_float(self.translation.get("min_pacing_source_sec"), 20.0),
+            localization_chars_per_sec=_as_float(self.translation.get("localization_chars_per_sec"), 4.2),
+            localization_spoken_cost_per_sec=_as_float(self.translation.get("localization_spoken_cost_per_sec"), 3.6),
+            localization_max_audio_speed=_as_float(self.translation.get("localization_max_audio_speed"), 1.10),
+            localization_seam_gap_sec=_as_float(self.translation.get("localization_seam_gap_sec"), 0.12),
+            localization_max_window_gap_sec=_as_float(self.translation.get("localization_max_window_gap_sec"), 6.0),
             raw_config=dict(self.raw),
         )
 

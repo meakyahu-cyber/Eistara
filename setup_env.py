@@ -8,14 +8,12 @@ leaves IndexTTS as an external service.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
-from urllib.request import urlretrieve
 
 
 ROOT = Path(__file__).resolve().parent
@@ -46,15 +44,9 @@ DEMUX_RUNTIME_DEPS = [
     "tqdm",
 ]
 DEMUX_PACKAGE = "demucs @ git+https://github.com/adefossez/demucs@b9ab48cad45976ba42b2ff17b229c071f0df9390"
-AUDIO_SEPARATOR_PACKAGES = ["audio-separator==0.44.2", "onnxruntime-gpu==1.23.2"]
 
 DEFAULT_ASR_MODEL = "Systran/faster-whisper-large-v3"
 ZH_ASR_MODEL = "Huan69/Belle-whisper-large-v3-zh-punct-fasterwhisper"
-UVR_MODEL_NAME = "UVR-MDX-NET-Voc_FT.onnx"
-UVR_MODEL_SIZE = 66762490
-UVR_MODEL_MD5 = "d21dc03e4b9ef397b47231f483af6db8"
-UVR_MODEL_URL = "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Voc_FT.onnx"
-UVR_MODEL_MIRROR_URL = "https://gh.llkk.cc/https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Voc_FT.onnx"
 SUPPORTED_PYTHON_MIN = (3, 10)
 SUPPORTED_PYTHON_MAX = (3, 12)
 
@@ -99,7 +91,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--torch", choices=["auto", "cpu", "cu128"], default="auto", help="PyTorch wheel channel.")
     parser.add_argument("--with-zh-asr", action="store_true", help="Also cache the Chinese Belle faster-whisper model.")
     parser.add_argument("--skip-demucs-model", action="store_true", help="Do not prefetch the Demucs htdemucs checkpoint.")
-    parser.add_argument("--skip-uvr-mdx", action="store_true", help="Do not download the optional UVR-MDX audio-separator model.")
     return parser.parse_args()
 
 
@@ -247,7 +238,6 @@ def install_dependencies(args: argparse.Namespace) -> None:
     # Demucs wheel without allowing pip to downgrade torch.
     run_pip(["install", *DEMUX_RUNTIME_DEPS], args, allow_official_fallback=True)
     install_demucs_without_deps(args)
-    run_pip(["install", *AUDIO_SEPARATOR_PACKAGES], args, allow_official_fallback=True)
 
 
 def install_demucs_without_deps(args: argparse.Namespace) -> None:
@@ -269,8 +259,6 @@ def prepare_models(args: argparse.Namespace) -> None:
         download_hf_snapshot(ZH_ASR_MODEL, model_dir, hf_endpoint)
     if not args.skip_demucs_model:
         prefetch_demucs_model()
-    if not args.skip_uvr_mdx:
-        download_uvr_model(args.china_mirror)
 
 
 def download_hf_snapshot(repo_id: str, cache_dir: Path, hf_endpoint: str) -> None:
@@ -291,36 +279,6 @@ def prefetch_demucs_model() -> None:
     run([str(PYTHON), "-c", code], [])
 
 
-def download_uvr_model(china_mirror: bool) -> None:
-    target_dir = ROOT / "models" / "audio-separator"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / UVR_MODEL_NAME
-    if valid_file(target, UVR_MODEL_SIZE, UVR_MODEL_MD5):
-        print(f"UVR-MDX model already ready: {target}")
-        return
-    url = UVR_MODEL_MIRROR_URL if china_mirror else UVR_MODEL_URL
-    partial = target.with_suffix(target.suffix + ".part")
-    if partial.exists():
-        partial.unlink()
-    print(f"Downloading UVR-MDX model: {url}")
-    urlretrieve(url, partial)
-    if not valid_file(partial, UVR_MODEL_SIZE, UVR_MODEL_MD5):
-        partial.unlink(missing_ok=True)
-        raise SystemExit("Downloaded UVR-MDX model failed integrity check.")
-    partial.replace(target)
-    print(f"UVR-MDX model ready: {target}")
-
-
-def valid_file(path: Path, expected_size: int, expected_md5: str) -> bool:
-    if not path.exists() or path.stat().st_size != expected_size:
-        return False
-    digest = hashlib.md5()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest().lower() == expected_md5.lower()
-
-
 def check_host_runtime() -> None:
     print("Checking host runtime dependencies...")
     if shutil.which("ffmpeg") and shutil.which("ffprobe"):
@@ -337,7 +295,7 @@ def run_health_summary() -> None:
     print("Checking installed runtime packages...")
     code = (
         "import importlib.metadata as m; "
-        "pkgs=['streamlit','torch','torchaudio','whisperx','faster-whisper','demucs','audio-separator','onnxruntime-gpu','yt-dlp']; "
+        "pkgs=['streamlit','torch','torchaudio','whisperx','faster-whisper','demucs','yt-dlp']; "
         "missing=[]; "
         "\nfor p in pkgs:\n"
         "    try: print(f'{p}: {m.version(p)}')\n"

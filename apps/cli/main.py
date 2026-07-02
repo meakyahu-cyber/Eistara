@@ -466,6 +466,7 @@ def cmd_render(args: argparse.Namespace) -> int:
                     start_sec=float(item["start_sec"]),
                     end_sec=float(item["end_sec"]),
                     gain_db=float(item.get("gain_db") or 0),
+                    speed=float(item.get("speed") or 1.0),
                 )
                 for item in data.get("clips", [])
             ),
@@ -491,6 +492,7 @@ def cmd_render(args: argparse.Namespace) -> int:
             clip_fade_in_ms=int(data.get("clip_fade_in_ms") or 5),
             clip_fade_out_ms=int(data.get("clip_fade_out_ms") or 220),
             clip_tail_pad_ms=int(data.get("clip_tail_pad_ms") or 220),
+            clip_tail_pad_counts_in_timeline=bool(data.get("clip_tail_pad_counts_in_timeline", False)),
             clip_tail_cleanup=bool(data.get("clip_tail_cleanup", True)),
             clip_tail_cleanup_ms=int(data.get("clip_tail_cleanup_ms") or 420),
             clip_tail_cleanup_lowpass_hz=int(data.get("clip_tail_cleanup_lowpass_hz") or 3600),

@@ -15,7 +15,7 @@ from eistara.core.subtitle import SubtitleEvent, format_srt_timestamp, normalize
 
 from .llm import LlmClient
 from .models import Terminology, TranslationItem, TranslationSettings
-from .pacing import build_pacing_budget, count_chinese_chars, count_english_words
+from .pacing import count_chinese_chars, count_english_words, estimate_spoken_cost_units
 from .service import PublishTranslationService
 from .summary import generate_terminology_summary
 
@@ -68,7 +68,22 @@ class PublishTranslationStageRunner:
             json.dumps({"translations": translation_rows}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        v1_outputs = _write_v1_publish_outputs(output_dir, items, result.translations, rows, settings)
+        localization_report_json = None
+        if result.localization_reports:
+            localization_report_json = output_internal_path(output_dir, "localization_second_pass.json")
+            localization_report_json.parent.mkdir(parents=True, exist_ok=True)
+            localization_report_json.write_text(
+                json.dumps({"batches": result.localization_reports}, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        v1_outputs = _write_v1_publish_outputs(
+            output_dir,
+            items,
+            result.translations,
+            rows,
+            settings,
+            localization_reports=result.localization_reports,
+        )
 
         tts_segments = _build_tts_segments(items, result.translations, output_dir)
         outputs: dict[str, Any] = {
@@ -81,6 +96,8 @@ class PublishTranslationStageRunner:
         }
         if terminology_json is not None and terminology_json.exists():
             outputs["terminology_json"] = str(terminology_json)
+        if localization_report_json is not None:
+            outputs["localization_second_pass_report"] = str(localization_report_json)
         subtitle_rows_json = context.task.get("subtitle_rows_json") or context.artifacts.get("subtitle_rows_json")
         if subtitle_rows_json:
             outputs["subtitle_rows_json"] = str(subtitle_rows_json)
@@ -318,6 +335,7 @@ def _write_v1_publish_outputs(
     translations: dict[int, str],
     rows: list[SubtitleRow] | None,
     settings: TranslationSettings,
+    localization_reports: list[dict[str, Any]] | None = None,
 ) -> dict[str, str]:
     log_dir = output_dir / "log"
     audio_dir = output_dir / "audio"
@@ -363,6 +381,7 @@ def _write_v1_publish_outputs(
                     "audio_source_srt": str(audio_source_srt),
                     "audio_translated_srt": str(audio_translated_srt),
                 },
+                "localization_second_pass": localization_reports or [],
             },
             ensure_ascii=False,
             indent=2,
@@ -579,31 +598,21 @@ def _report_batches(
     for item in items:
         item_chars = len(str(item.source))
         if current and (len(current) >= max_lines or current_chars + item_chars > max_chars):
-            batches.append(_report_batch(len(batches) + 1, current, settings, translations))
+            batches.append(_report_batch(len(batches) + 1, current, translations))
             current = []
             current_chars = 0
         current.append(item)
         current_chars += item_chars
     if current:
-        batches.append(_report_batch(len(batches) + 1, current, settings, translations))
+        batches.append(_report_batch(len(batches) + 1, current, translations))
     return batches
 
 
 def _report_summary(items: list[TranslationItem], batches: list[dict[str, Any]]) -> dict[str, Any]:
-    pacing_items = [dict(batch.get("pacing") or {}) for batch in batches]
     source_items = len(items) if items else sum(int(batch.get("items") or 0) for batch in batches)
-    actual_zh_chars = _sum_numeric(pacing_items, "actual_zh_chars")
-    target_zh_chars = _sum_numeric(pacing_items, "target_zh_chars")
-    source_duration_sec = _sum_numeric(pacing_items, "source_duration_sec")
-    estimated_tts_chars_per_sec = _weighted_average(pacing_items, "estimated_tts_chars_per_sec", "source_duration_sec")
-    level_counts: dict[str, int] = {}
-    for pacing in pacing_items:
-        level = str(pacing.get("level") or "unknown")
-        level_counts[level] = level_counts.get(level, 0) + 1
-
-    estimated_actual_pressure = None
-    if actual_zh_chars is not None and source_duration_sec and estimated_tts_chars_per_sec:
-        estimated_actual_pressure = round(actual_zh_chars / estimated_tts_chars_per_sec / source_duration_sec, 3)
+    actual_zh_chars = _sum_numeric(batches, "actual_zh_chars")
+    actual_spoken_cost = _sum_numeric(batches, "actual_spoken_cost")
+    source_duration_sec = _sum_numeric(batches, "source_duration_sec")
 
     return {
         "batch_count": len(batches),
@@ -612,24 +621,12 @@ def _report_summary(items: list[TranslationItem], batches: list[dict[str, Any]])
             "source_chars": sum(int(batch.get("source_chars") or 0) for batch in batches),
             "english_words": sum(int(batch.get("english_words") or 0) for batch in batches),
             "source_duration_sec": _round_optional(source_duration_sec),
-            "min_zh_chars": _sum_numeric(pacing_items, "min_zh_chars"),
-            "target_zh_chars": target_zh_chars,
-            "hard_zh_chars": _sum_numeric(pacing_items, "hard_zh_chars"),
             "actual_zh_chars": actual_zh_chars,
+            "actual_spoken_cost": actual_spoken_cost,
         },
-        "pacing": {
-            "enabled_batches": sum(1 for pacing in pacing_items if pacing.get("enabled") is True),
-            "disabled_batches": sum(1 for pacing in pacing_items if pacing.get("enabled") is False),
-            "level_counts": level_counts,
-            "predicted_pressure": _numeric_stats(pacing_items, "predicted_pressure"),
-            "pressure_at_min_zh_ratio": _numeric_stats(pacing_items, "pressure_at_min_zh_ratio"),
-            "estimated_actual_pressure": _numeric_stats(pacing_items, "estimated_actual_pressure"),
-            "actual_to_target_ratio": (
-                round(actual_zh_chars / target_zh_chars, 3)
-                if actual_zh_chars is not None and target_zh_chars and target_zh_chars > 0
-                else None
-            ),
-            "estimated_overall_actual_pressure": estimated_actual_pressure,
+        "spoken_cost": {
+            "actual_zh_chars_per_sec": _numeric_stats(batches, "actual_zh_chars_per_sec"),
+            "actual_spoken_cost_per_sec": _numeric_stats(batches, "actual_spoken_cost_per_sec"),
         },
     }
 
@@ -688,26 +685,20 @@ def _round_optional(value: float | int | None) -> float | int | None:
 def _report_batch(
     index: int,
     batch: list[TranslationItem],
-    settings: TranslationSettings,
     translations: dict[int, str] | None = None,
 ) -> dict[str, Any]:
     english_words = sum(count_english_words(item.source) for item in batch)
+    source_duration_sec = sum(max(0.0, float(item.duration_sec or 0.0)) for item in batch)
     translated_zh_chars = (
         sum(count_chinese_chars((translations or {}).get(item.id, "")) for item in batch)
         if translations is not None
         else None
     )
-    pacing_budget = build_pacing_budget(batch, settings)
-    pacing = pacing_budget.to_prompt_dict()
-    if translated_zh_chars is not None:
-        pacing["actual_zh_chars"] = translated_zh_chars
-        if pacing_budget.target_zh_chars > 0:
-            pacing["actual_to_target_ratio"] = round(translated_zh_chars / pacing_budget.target_zh_chars, 3)
-        if pacing_budget.source_duration_sec > 0 and pacing_budget.estimated_tts_chars_per_sec > 0:
-            pacing["estimated_actual_pressure"] = round(
-                translated_zh_chars / pacing_budget.estimated_tts_chars_per_sec / pacing_budget.source_duration_sec,
-                3,
-            )
+    translated_spoken_cost = (
+        sum(estimate_spoken_cost_units((translations or {}).get(item.id, "")) for item in batch)
+        if translations is not None
+        else None
+    )
     return {
         "index": index,
         "items": len(batch),
@@ -715,5 +706,17 @@ def _report_batch(
         "last_id": batch[-1].id,
         "source_chars": sum(len(str(item.source)) for item in batch),
         "english_words": english_words,
-        "pacing": pacing,
+        "source_duration_sec": round(source_duration_sec, 3),
+        "actual_zh_chars": translated_zh_chars,
+        "actual_spoken_cost": translated_spoken_cost,
+        "actual_zh_chars_per_sec": (
+            round(translated_zh_chars / source_duration_sec, 3)
+            if translated_zh_chars is not None and source_duration_sec > 0
+            else None
+        ),
+        "actual_spoken_cost_per_sec": (
+            round(translated_spoken_cost / source_duration_sec, 3)
+            if translated_spoken_cost is not None and source_duration_sec > 0
+            else None
+        ),
     }

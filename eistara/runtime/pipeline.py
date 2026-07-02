@@ -3,12 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from eistara.adapters.asr import (
-    AudioSeparatorVocalSeparationProvider,
-    DemucsVocalSeparationProvider,
-    WhisperRuntimeAsrProvider,
-)
-from eistara.adapters.llm import OpenAICompatibleLlmClient, OpenAICompatibleSettings, RequestsHttpTransport
+from eistara.adapters.asr import DemucsVocalSeparationProvider, WhisperRuntimeAsrProvider
+from eistara.adapters.llm import CodexResponsesLlmClient, OpenAICompatibleLlmClient, OpenAICompatibleSettings, RequestsHttpTransport
 from eistara.adapters.media import FfmpegDubbingRenderer, FfmpegMediaProvider
 from eistara.adapters.source import YtDlpSourceProvider
 from eistara.adapters.tts import IndexTtsProvider
@@ -194,6 +190,11 @@ def build_runners(
                 background_duck_transition_ms=config.dub_audio.background_duck_transition_ms,
                 background_duck_filter=config.dub_audio.background_duck_filter,
                 background_duck_lowpass_hz=config.dub_audio.background_duck_lowpass_hz,
+                background_duck_adaptive=config.dub_audio.background_duck_adaptive,
+                background_duck_target_under_voice_db=config.dub_audio.background_duck_target_under_voice_db,
+                background_duck_high_coverage_under_voice_db=config.dub_audio.background_duck_high_coverage_under_voice_db,
+                background_duck_max_makeup_db=config.dub_audio.background_duck_max_makeup_db,
+                background_duck_wideband_when_adaptive=config.dub_audio.background_duck_wideband_when_adaptive,
                 source_bed_duck_volume=config.dub_audio.source_bed_duck_volume,
                 source_bed_lowpass_hz=config.dub_audio.source_bed_lowpass_hz,
             ),
@@ -249,6 +250,11 @@ def _plan_runners(config: AppConfig, *, render_audio: bool, render_video: bool):
             background_duck_transition_ms=config.dub_audio.background_duck_transition_ms,
             background_duck_filter=config.dub_audio.background_duck_filter,
             background_duck_lowpass_hz=config.dub_audio.background_duck_lowpass_hz,
+            background_duck_adaptive=config.dub_audio.background_duck_adaptive,
+            background_duck_target_under_voice_db=config.dub_audio.background_duck_target_under_voice_db,
+            background_duck_high_coverage_under_voice_db=config.dub_audio.background_duck_high_coverage_under_voice_db,
+            background_duck_max_makeup_db=config.dub_audio.background_duck_max_makeup_db,
+            background_duck_wideband_when_adaptive=config.dub_audio.background_duck_wideband_when_adaptive,
             source_bed_duck_volume=config.dub_audio.source_bed_duck_volume,
             source_bed_lowpass_hz=config.dub_audio.source_bed_lowpass_hz,
         ),
@@ -276,6 +282,7 @@ def _dubbing_service(config: AppConfig) -> DubbingRenderService:
         clip_fade_in_ms=config.dub_audio.tts_segment_fade_in_ms,
         clip_fade_out_ms=config.dub_audio.tts_segment_fade_out_ms,
         clip_tail_pad_ms=config.dub_audio.tts_segment_tail_pad_ms,
+        clip_tail_pad_counts_in_timeline=config.dub_audio.tts_segment_tail_pad_counts_in_timeline,
         clip_tail_cleanup=config.dub_audio.tts_segment_tail_cleanup,
         clip_tail_cleanup_ms=config.dub_audio.tts_segment_tail_cleanup_ms,
         clip_tail_cleanup_lowpass_hz=config.dub_audio.tts_segment_tail_cleanup_lowpass_hz,
@@ -290,6 +297,7 @@ def _dubbing_service(config: AppConfig) -> DubbingRenderService:
 def _timeline_policy(config: AppConfig) -> TimelinePolicy:
     dub = config.dub_audio
     return TimelinePolicy(
+        timeline_mode=dub.publish_timeline_mode,
         lead_in_sec=dub.publish_lead_in_ms / 1000,
         line_gap_sec=dub.publish_line_gap_ms / 1000,
         row_gap_sec=dub.publish_row_gap_ms / 1000,
@@ -299,6 +307,12 @@ def _timeline_policy(config: AppConfig) -> TimelinePolicy:
         source_gap_scale=dub.publish_source_gap_scale,
         preserve_source_gaps=True,
         preserve_short_source_windows=dub.publish_preserve_short_source_windows,
+        source_window_stretch_max=dub.publish_source_window_stretch_max,
+        source_window_borrow_enabled=dub.publish_source_window_borrow_enabled,
+        source_window_borrow_max_sec=dub.publish_source_window_borrow_max_sec,
+        source_window_borrow_max_ratio=dub.publish_source_window_borrow_max_ratio,
+        source_window_borrow_min_seam_sec=dub.publish_source_window_borrow_min_seam_sec,
+        source_window_retime_tier2_enabled=dub.publish_source_window_retime_tier2_enabled,
     )
 
 
@@ -320,15 +334,7 @@ def _asr_provider(config: AppConfig):
 def _vocal_separation_provider(config: AppConfig):
     if not config.demucs.enabled:
         return None
-    provider = config.demucs.provider.lower()
-    if provider in {"demucs", ""}:
-        return DemucsVocalSeparationProvider()
-    if provider in {"audio-separator", "audio_separator", "mdx", "uvr-mdx"}:
-        return AudioSeparatorVocalSeparationProvider(
-            model_filename=config.demucs.audio_separator_model,
-            model_dir=config.demucs.audio_separator_model_dir,
-        )
-    raise ValueError(f"Unsupported vocal separation provider: {config.demucs.provider}")
+    return DemucsVocalSeparationProvider()
 
 
 def _llm_client(config: AppConfig) -> OpenAICompatibleLlmClient:
@@ -341,17 +347,21 @@ def _llm_client(config: AppConfig) -> OpenAICompatibleLlmClient:
         user_agent=config.api.user_agent,
         trust_env_proxy=config.api.trust_env_proxy,
         proxy_url=config.api.proxy_url,
+        stream_responses=config.api.llm_stream,
         max_retries=config.api.max_retries,
         retry_base_delay_sec=config.api.retry_base_delay_sec,
         retry_max_delay_sec=config.api.retry_max_delay_sec,
     )
-    return OpenAICompatibleLlmClient(
-        settings,
-        RequestsHttpTransport(
-            trust_env=settings.trust_env_proxy,
-            proxy_url=settings.proxy_url,
-        ),
+    transport = RequestsHttpTransport(
+        trust_env=settings.trust_env_proxy,
+        proxy_url=settings.proxy_url,
     )
+    interface = str(config.api.llm_interface or "chat_completions").strip().lower().replace("-", "_")
+    if interface in {"codex_responses", "codex_response", "responses", "responses_api"}:
+        return CodexResponsesLlmClient(settings, transport)
+    if interface not in {"chat_completions", "chat_completion", "chat"}:
+        raise ValueError(f"Unsupported LLM interface: {config.api.llm_interface}")
+    return OpenAICompatibleLlmClient(settings, transport)
 
 
 def _tts_provider(config: AppConfig):

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from .audio import has_positive_audio_duration, wav_duration_sec, write_silence_wav
+from .audio import has_audible_audio, has_positive_audio_duration, wav_duration_sec, write_silence_wav
 from .cache import TtsCachePolicy
 from .models import TtsRequest, TtsResult, TtsSettings
 from .postprocess import analyze_generated_tts_audio, postprocess_generated_tts_audio_with_report
@@ -38,17 +38,23 @@ class TtsService:
         metadata = self.cache.build_metadata(normalized_request, cleaned_text)
         if self.cache.should_skip(normalized_request.output_path, metadata):
             quality = analyze_generated_tts_audio(normalized_request.output_path, self.settings.audio_config)
-            return TtsResult(
-                output_path=normalized_request.output_path,
-                cached=True,
-                warnings=quality.warnings,
-                metadata={"audio_quality": quality.to_dict()},
-            )
+            if not _quality_report_has_audible_audio(quality):
+                self.cache.remove(normalized_request.output_path)
+            else:
+                return TtsResult(
+                    output_path=normalized_request.output_path,
+                    cached=True,
+                    warnings=quality.warnings,
+                    metadata={"audio_quality": quality.to_dict()},
+                )
 
         if is_silent_tts_text(cleaned_text):
             self._write_placeholder_audio(normalized_request.output_path)
-            self.cache.write_metadata(normalized_request.output_path, metadata)
-            return TtsResult(output_path=normalized_request.output_path, duration_sec=0.1, warnings=["silent placeholder"])
+            return TtsResult(
+                output_path=normalized_request.output_path,
+                duration_sec=0.1,
+                warnings=["silent placeholder"],
+            )
 
         last_error: Exception | None = None
         last_was_service_error = False
@@ -74,15 +80,10 @@ class TtsService:
                 warnings = quality.warnings
                 if not has_positive_audio_duration(current_request.output_path):
                     self.cache.remove(current_request.output_path)
-                    if attempt >= self.settings.max_retries - 1:
-                        self._write_placeholder_audio(current_request.output_path)
-                        self.cache.write_metadata(current_request.output_path, metadata)
-                        return TtsResult(
-                            output_path=current_request.output_path,
-                            duration_sec=0.1,
-                            warnings=["zero-duration placeholder"],
-                        )
                     raise TtsProviderError("TTS provider did not write positive-duration audio")
+                if not has_audible_audio(current_request.output_path):
+                    self.cache.remove(current_request.output_path)
+                    raise TtsProviderError("TTS provider wrote silent audio")
                 self.cache.write_metadata(current_request.output_path, metadata)
                 return TtsResult(
                     output_path=current_request.output_path,
@@ -121,3 +122,9 @@ class TtsService:
             return
         except Exception:
             return
+
+
+def _quality_report_has_audible_audio(report) -> bool:
+    if report.skipped or report.error:
+        return True
+    return report.processed_duration_ms > 0 and report.peak_dbfs is not None

@@ -5,6 +5,8 @@ api:
   key: ""
   base_url: ""
   model: ""
+  llm_interface: chat_completions
+  llm_stream: false
   llm_support_json: true
   proxy_url: ""
 
@@ -18,18 +20,64 @@ whisper:
 
 demucs:
   enabled: true
-  provider: demucs
   segment_minutes: 30
-  audio_separator_model: UVR-MDX-NET-Voc_FT.onnx
-  audio_separator_model_dir: ./models/audio-separator
 
 indextts:
   api_url: "http://127.0.0.1:8010/tts"
   prompt_audio_mode: auto_ref
+  duration_control:
+    enabled: false
+    target_duration_sec:
+    duration_scale:
+    adaptive_source_window_retry:
+      enabled: true
+      target_scale: 1.0
+      min_target_sec: 0.18
+      screen_borrow_max_sec: 0.30
+      screen_max_audio_speed: 1.07
+      target_borrow_max_sec: 0.50
+      borrow_min_seam_sec: 0.12
+      max_window_gap_sec: 6.0
+      line_gap_sec: 0.18
+      low_occupancy_retry_enabled: false
 
 render:
   render_audio: true
   render_video: true
   burn_subtitles: false
+
+translation:
+  publish_fast_chunk_lines: 20
+  localization_chars_per_sec: 4.2
+  localization_spoken_cost_per_sec: 3.6
+  localization_max_audio_speed: 1.10
+  localization_seam_gap_sec: 0.12
+  localization_max_window_gap_sec: 6.0
+
+tts_audio:
+  pacing_quality_check: false
+  pacing_baseline_min_samples: 3
+  pacing_slow_rate_ratio: 0.75
+  pacing_short_max_units: 8
+  pacing_short_drag_ratio: 1.25
+  pacing_short_max_sec_per_unit: 0.30
+  pacing_single_unit_max_active_sec: 0.70
+
+dub_audio:
+  publish_timeline_mode: source_window
+  publish_source_window_stretch_max: 1.10
+  publish_source_window_borrow_enabled: true
+  publish_source_window_borrow_max_sec: 0.60
+  publish_source_window_borrow_max_ratio: 0.50
+  publish_source_window_borrow_min_seam_sec: 0.12
+  publish_source_window_retime_tier2_enabled: false
+  publish_target_video_speed_min: 0.90
+  publish_max_audio_speed: 1.10
+  background_duck_adaptive: true
+  background_duck_target_under_voice_db: 16.0
+  background_duck_high_coverage_under_voice_db: 14.0
+  background_duck_max_makeup_db: 12.0
+  background_duck_wideband_when_adaptive: true
+  tts_segment_tail_pad_counts_in_timeline: false
 
 model_dir: ./_model_cache

@@ -14,6 +14,18 @@ class TimelinePolicy:
     source_gap_scale: float = 0.45
     preserve_source_gaps: bool = True
     preserve_short_source_windows: bool = False
+    timeline_mode: str = "cursor"
+    source_window_stretch: float = 1.0
+    source_window_stretch_max: float = 1.10
+    source_window_borrow_enabled: bool = True
+    source_window_borrow_max_sec: float = 0.60
+    source_window_borrow_max_ratio: float = 0.50
+    source_window_borrow_min_seam_sec: float = 0.12
+    source_window_retime_tier2_enabled: bool = False
+
+    @property
+    def uses_source_windows(self) -> bool:
+        return str(self.timeline_mode).strip().lower() in {"source_window", "source-windows", "source_windows"}
 
     def scaled_source_gap(self, previous_source_end_sec: float, next_source_start_sec: float) -> float:
         if not self.preserve_source_gaps:

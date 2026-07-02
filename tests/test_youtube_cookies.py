@@ -6,6 +6,7 @@ from pathlib import Path
 from eistara.config.loader import load_mapping
 from eistara.config.youtube_cookies import (
     apply_youtube_cookie_config,
+    BrowserCookieCandidate,
     browser_from_user_choice_progid,
     installed_browser_candidates,
     resolve_browser_cookie_candidate,
@@ -39,6 +40,23 @@ def test_resolve_browser_cookie_candidate_accepts_explicit_browser() -> None:
     assert candidate is not None
     assert candidate.browser == "edge"
     assert candidate.profile == "Default"
+
+
+def test_resolve_browser_cookie_candidate_auto_prefers_default_browser(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "eistara.config.youtube_cookies.detect_default_browser",
+        lambda: BrowserCookieCandidate("firefox", source="default_browser"),
+    )
+    monkeypatch.setattr(
+        "eistara.config.youtube_cookies.installed_browser_candidates",
+        lambda: [BrowserCookieCandidate("edge", source="installed_browser")],
+    )
+
+    candidate = resolve_browser_cookie_candidate("auto")
+
+    assert candidate is not None
+    assert candidate.browser == "firefox"
+    assert candidate.source == "default_browser"
 
 
 def test_apply_youtube_cookie_config_writes_browser_reference_only(tmp_path: Path) -> None:

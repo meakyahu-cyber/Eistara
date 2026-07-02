@@ -7,18 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .audio import has_positive_audio_duration
+from .audio import has_audible_audio, has_positive_audio_duration
 from .models import TtsRequest, TtsSettings
 
 
 TTS_AUDIO_CACHE_KEYS = (
     "merge_micro_lines",
     "merge_micro_line_chars",
-    "slow_fast_segments",
-    "slow_fast_trigger_units_per_sec",
-    "slow_fast_target_units_per_sec",
-    "slow_fast_max_duration_factor",
-    "slow_fast_min_duration_sec",
     "postprocess_audio",
     "trim_silence",
     "trim_silence_padding_ms",
@@ -44,6 +39,7 @@ INDEXTTS_CACHE_KEYS = (
     "num_beams",
     "repetition_penalty",
     "max_mel_tokens",
+    "duration_control",
 )
 
 CUSTOM_TTS_CACHE_KEYS = (
@@ -94,6 +90,9 @@ class TtsCachePolicy:
                 "effective_prompt_audio_file": file_fingerprint(prompt_audio),
                 "config": _selected_config(self.settings.provider_config, INDEXTTS_CACHE_KEYS),
             }
+            request_duration_control = _request_duration_control(request.metadata)
+            if request_duration_control:
+                payload["indextts"]["request_duration_control"] = request_duration_control
         elif method == "custom_tts":
             payload["custom_tts"] = {
                 "config": _selected_config(self.settings.provider_config, CUSTOM_TTS_CACHE_KEYS),
@@ -128,6 +127,9 @@ class TtsCachePolicy:
     def should_skip(self, audio_path: Path, metadata: dict[str, Any]) -> bool:
         if not audio_path.exists():
             return False
+        if not has_audible_audio(audio_path):
+            self.remove(audio_path)
+            return False
         cached = self.read_metadata(audio_path)
         if cached and cached.get("signature") == metadata["signature"]:
             if has_positive_audio_duration(audio_path):
@@ -145,3 +147,11 @@ class TtsCachePolicy:
 
 def _selected_config(config: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
     return {key: config.get(key) for key in keys}
+
+
+def _request_duration_control(metadata: dict[str, Any]) -> dict[str, Any]:
+    for key in ("indextts_duration_control", "duration_control"):
+        value = metadata.get(key)
+        if isinstance(value, dict):
+            return dict(value)
+    return {}

@@ -50,9 +50,15 @@ def build_audio_mix_ffmpeg_args(plan: AudioMixPlan, executable: str = "ffmpeg") 
         label = f"clip{index}"
         input_label = f"[{input_index}:a]"
         processed_label = _append_v1_clip_filters(filters, input_label, f"clip{index}", clip, plan)
+        clip_speed = _clip_speed(clip)
+        if clip_speed > 1.001:
+            speed_label = f"{label}speed"
+            filters.append(f"{processed_label}{_atempo_filter(clip_speed)}[{speed_label}]")
+            processed_label = f"[{speed_label}]"
+        effective_clip_end = float(clip.start_sec) + (_clip_render_duration_sec(clip, plan) / clip_speed)
         filters.append(
             f"{processed_label}adelay={delay_ms}|{delay_ms},"
-            f"apad=whole_dur={max(mix_duration_sec, clip.end_sec):.3f}"
+            f"apad=whole_dur={max(mix_duration_sec, effective_clip_end):.3f}"
             f"[{label}]"
         )
         input_labels.append(f"[{label}]")
@@ -65,10 +71,7 @@ def build_audio_mix_ffmpeg_args(plan: AudioMixPlan, executable: str = "ffmpeg") 
     else:
         filters.append(f"{''.join(input_labels)}amix=inputs={len(input_labels)}:duration=longest:dropout_transition=0[mixpre]")
 
-    if plan.global_audio_speed > 1.001:
-        filters.append(f"[mixpre]{_atempo_filter(plan.global_audio_speed)}[mix]")
-    else:
-        filters.append("[mixpre]anull[mix]")
+    filters.append("[mixpre]anull[mix]")
 
     args.extend(
         [
@@ -95,29 +98,8 @@ def _render_v1_streamed_audio_mix(plan: AudioMixPlan, media: FfmpegMediaProvider
     merge_path = _new_temp_wav(plan.output_audio.parent)
     temp_paths.append(merge_path)
     try:
-        _write_v1_streamed_mix_wav(plan, merge_path)
-        export_source = merge_path
-        if plan.global_audio_speed > 1.001:
-            speed_path = _new_temp_wav(plan.output_audio.parent)
-            temp_paths.append(speed_path)
-            speed_result = media._run_command(
-                (
-                    executable,
-                    "-y",
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-i",
-                    str(merge_path),
-                    "-filter:a",
-                    _atempo_filter(plan.global_audio_speed),
-                    str(speed_path),
-                )
-            )
-            if not speed_result.ok:
-                return speed_result
-            export_source = speed_path
-        return media._run_command(_v1_export_audio_args(executable, export_source, plan.output_audio, plan.bitrate))
+        _write_v1_streamed_mix_wav(plan, merge_path, executable)
+        return media._run_command(_v1_export_audio_args(executable, merge_path, plan.output_audio, plan.bitrate))
     finally:
         for path in temp_paths:
             try:
@@ -135,7 +117,11 @@ def _new_temp_wav(directory: Path) -> Path:
         handle.close()
 
 
-def _write_v1_streamed_mix_wav(plan: AudioMixPlan, output_file: Path) -> None:
+def _write_v1_streamed_mix_wav(plan: AudioMixPlan, output_file: Path, executable: str = "ffmpeg") -> None:
+    if _plan_has_clip_overlap(plan):
+        _write_v1_overlay_mix_wav(plan, output_file, executable)
+        return
+
     sample_rate = int(plan.sample_rate_hz)
     channels = 1
     sample_width = 2
@@ -155,14 +141,104 @@ def _write_v1_streamed_mix_wav(plan: AudioMixPlan, output_file: Path) -> None:
             if silence_duration > 0:
                 _write_silence(wav_file, int(silence_duration * 1000), channels, sample_width)
             audio_segment = _process_v1_clip_audio(clip.audio_path, plan, clip.gain_db)
+            audio_segment = _speed_audio_segment(audio_segment, _clip_speed(clip), executable)
             _write_audio_segment(wav_file, audio_segment, sample_rate, channels, sample_width)
-            previous_end = float(clip.end_sec)
+            previous_end = start_time + (len(audio_segment) / 1000)
         if previous_end is not None and float(plan.duration_sec) > previous_end:
             _write_silence(wav_file, int((float(plan.duration_sec) - previous_end) * 1000), channels, sample_width)
 
 
+def _plan_has_clip_overlap(plan: AudioMixPlan) -> bool:
+    previous_end: float | None = None
+    for clip in plan.clips:
+        current_start = float(clip.start_sec)
+        if previous_end is not None and current_start < previous_end - 0.001:
+            return True
+        previous_end = max(previous_end or 0.0, float(clip.start_sec) + _clip_render_duration_sec(clip, plan) / _clip_speed(clip))
+    return False
+
+
+def _write_v1_overlay_mix_wav(plan: AudioMixPlan, output_file: Path, executable: str = "ffmpeg") -> None:
+    try:
+        from pydub import AudioSegment
+    except Exception as exc:
+        raise RuntimeError(f"overlap audio mix requires pydub: {exc}") from exc
+
+    sample_rate = int(plan.sample_rate_hz)
+    channels = 1
+    sample_width = 2
+    duration_ms = int(
+        round(
+            max(
+                float(plan.duration_sec),
+                max((float(clip.start_sec) + _clip_render_duration_sec(clip, plan) / _clip_speed(clip) for clip in plan.clips), default=0.0),
+            )
+            * 1000
+        )
+    )
+    mix = AudioSegment.silent(duration=max(1, duration_ms), frame_rate=sample_rate).set_channels(channels).set_sample_width(sample_width)
+    for clip in plan.clips:
+        if not clip.audio_path.exists():
+            continue
+        audio_segment = _process_v1_clip_audio(clip.audio_path, plan, clip.gain_db)
+        audio_segment = _speed_audio_segment(audio_segment, _clip_speed(clip), executable)
+        audio_segment = audio_segment.set_frame_rate(sample_rate).set_channels(channels).set_sample_width(sample_width)
+        mix = mix.overlay(audio_segment, position=max(0, int(round(float(clip.start_sec) * 1000))))
+    mix.export(output_file, format="wav")
+
+
+def _clip_speed(clip) -> float:
+    return max(1.0, float(getattr(clip, "speed", 1.0) or 1.0))
+
+
+def _clip_render_duration_sec(clip, plan: AudioMixPlan) -> float:
+    duration = max(0.001, float(clip.duration_sec))
+    if bool(getattr(plan, "clip_tail_pad_counts_in_timeline", False)):
+        return duration
+    return duration + max(0.0, float(plan.clip_tail_pad_ms) / 1000)
+
+
 def _process_v1_clip_audio(audio_path: Path, plan: AudioMixPlan, gain_db: float):
     return process_v1_clip_audio(audio_path, plan, gain_db=gain_db)
+
+
+def _speed_audio_segment(audio_segment, speed: float, executable: str = "ffmpeg"):
+    speed = float(speed)
+    if speed <= 1.001:
+        return audio_segment
+
+    import subprocess
+
+    input_path = _new_temp_wav(Path(tempfile.gettempdir()))
+    output_path = _new_temp_wav(Path(tempfile.gettempdir()))
+    try:
+        audio_segment.export(input_path, format="wav")
+        command = (
+            executable,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(input_path),
+            "-filter:a",
+            _atempo_filter(speed),
+            str(output_path),
+        )
+        completed = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "").strip()
+            raise RuntimeError(f"ffmpeg atempo failed for clip speed {speed:.6f}: {detail}")
+
+        from pydub import AudioSegment
+
+        return AudioSegment.from_file(output_path)
+    finally:
+        for path in (input_path, output_path):
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
 
 def _write_silence(wav_file, duration_ms: int, channels: int, sample_width: int, chunk_ms: int = 30000) -> None:
@@ -216,7 +292,9 @@ def _atempo_filter(speed: float) -> str:
 
 
 def _append_v1_clip_filters(filters: list[str], input_label: str, prefix: str, clip, plan: AudioMixPlan) -> str:
-    raw_duration_sec = max(0.001, clip.duration_sec - max(0.0, plan.clip_tail_pad_ms / 1000))
+    raw_duration_sec = max(0.001, float(clip.duration_sec))
+    if bool(getattr(plan, "clip_tail_pad_counts_in_timeline", False)):
+        raw_duration_sec = max(0.001, raw_duration_sec - max(0.0, plan.clip_tail_pad_ms / 1000))
     chain = [f"volume={_db_expr(clip.gain_db)}"]
     if plan.clip_lowpass_hz > 0:
         chain.append(f"lowpass=f={int(plan.clip_lowpass_hz)}")

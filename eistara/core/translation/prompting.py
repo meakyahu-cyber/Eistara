@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import json
-from typing import Iterable
+from typing import Any, Iterable
 
-from .models import Terminology, TranslationItem, TranslationPacingBudget, TranslationSettings
-from .pacing import count_english_words
+from .models import Terminology, TranslationItem, TranslationSettings
 
 
 def format_terms(terms: Iterable[dict], limit: int = 80) -> str:
@@ -23,35 +22,44 @@ def build_publish_prompt(
     batch: list[TranslationItem],
     terminology: Terminology,
     settings: TranslationSettings,
-    pacing_budget: TranslationPacingBudget | None = None,
+    length_constraints: list[Any] | None = None,
 ) -> str:
     theme = terminology.theme.strip() if settings.use_summary else ""
     terms_text = format_terms(terminology.terms)
-    batch_json = json.dumps([_prompt_item(item, pacing_budget) for item in batch], ensure_ascii=False, indent=2)
-    pacing_enabled = bool(pacing_budget and pacing_budget.enabled)
-    pacing_text = _format_pacing_budget(pacing_budget) if pacing_enabled else ""
+    constraint_by_id = {constraint.id: constraint for constraint in length_constraints or []}
+    has_spoken_cost_constraints = any(
+        getattr(constraint, "max_spoken_cost", 0) > 0 for constraint in constraint_by_id.values()
+    )
+    batch_json = json.dumps(
+        [_prompt_item(item, constraint_by_id.get(item.id)) for item in batch],
+        ensure_ascii=False,
+        indent=2,
+    )
     timing_requirement = (
-        "5. Use the start/end/duration as pacing context for spoken dubbing.\n"
-        "   Do not mechanically fit every line to the source duration, but respect the batch pacing budget when one is provided."
-        if pacing_enabled
+        "5. Use the start/end/duration and dubbing_window as hard timing context for spoken dubbing.\n"
+        "   For each item with hard_limit_applies=true, write the shortest accurate spoken Chinese that fits max_spoken_cost.\n"
+        "   Preserve the core facts, numbers, names, causal links, and conclusions; compress filler and decorative wording first."
+        if has_spoken_cost_constraints
         else "5. Use the start/end/duration only as context for scene rhythm and speech flow.\n"
         "   Do not compress, omit, or summarize meaning just to fit the original timing."
     )
-    pacing_requirement = (
-        "10. When a dubbing pacing budget is enabled, treat it as an independent lock for this batch only.\n"
-        "   Do not make this batch overly short or overly long to compensate for other batches.\n"
-        "   Stay inside this batch's Chinese character range while preserving all facts and natural spoken Chinese.\n"
-        "   Treat item-level suggested Chinese character counts as flexible guidance; the batch total is more important.\n"
-        "11. Return only valid JSON with this schema:\n"
-        '   {"translations":[{"id":1,"text":"translated text"}]}'
-        if pacing_enabled
-        else "10. Translate as complete, natural Chinese narration for dubbing.\n"
-        "   Do not summarize, omit, or compress meaning to chase timing.\n"
-        "   Keep the spoken rhythm clear and human, but let meaning and natural phrasing lead.\n"
+    narration_requirement = (
+        "10. Translate as complete, natural Chinese narration for dubbing.\n"
+        "   Keep the spoken rhythm clear and human while respecting each hard timing budget.\n"
         "11. Return only valid JSON with this schema:\n"
         '   {"translations":[{"id":1,"text":"translated text"}]}'
     )
-    pacing_section = f"\n\nDubbing pacing budget:\n{pacing_text}" if pacing_text else ""
+    length_requirement = (
+        "\n12. Dubbing window hard rule:\n"
+        "   Each input item may include dubbing_window with target_spoken_cost and max_spoken_cost.\n"
+        "   max_spoken_cost is a hard upper bound for every item with hard_limit_applies=true.\n"
+        "   Spoken cost includes Han characters, Arabic digits, years, percentages, Latin names/acronyms, and punctuation pauses.\n"
+        "   Aim near target_spoken_cost, and do not exceed max_spoken_cost.\n"
+        "   Preserve core facts, causal links, numbers, names, and conclusions; compress filler, repetition, and decorative modifiers first.\n"
+        "   Use concise spoken forms for numbers and names when accurate, but do not falsify exact values."
+        if has_spoken_cost_constraints
+        else ""
+    )
 
     return f"""
 You are a professional video dubbing translator.
@@ -74,70 +82,25 @@ Requirements:
 9. For readability and later one-line subtitle splitting, write in short spoken clauses.
    Prefer natural Chinese punctuation every 8-20 Chinese characters when the sentence is long.
    Do not force each item to be short; keep the meaning complete for dubbing.
-{pacing_requirement}
+{narration_requirement}
+{length_requirement}
 
 Video/theme context:
 {theme or "None"}
 
 Terminology:
-{terms_text}{pacing_section}
+{terms_text}
 
 Input subtitle blocks:
 {batch_json}
 """.strip()
 
 
-def _prompt_item(item: TranslationItem, pacing_budget: TranslationPacingBudget | None) -> dict:
+def _prompt_item(
+    item: TranslationItem,
+    length_constraint: Any | None,
+) -> dict:
     data = item.to_prompt_dict()
-    if pacing_budget and pacing_budget.enabled and pacing_budget.english_words > 0:
-        item_words = count_english_words(item.source)
-        share = item_words / pacing_budget.english_words if item_words > 0 else 0.0
-        data["source_english_words"] = item_words
-        data["suggested_zh_chars"] = max(1, round(pacing_budget.target_zh_chars * share)) if share > 0 else 0
+    if length_constraint is not None and getattr(length_constraint, "max_spoken_cost", 0) > 0:
+        data["dubbing_window"] = length_constraint.to_prompt_dict()
     return data
-
-
-def _format_pacing_budget(pacing_budget: TranslationPacingBudget | None) -> str:
-    if pacing_budget is None:
-        return "None"
-    data = pacing_budget.to_prompt_dict()
-    if not pacing_budget.enabled:
-        guidance = "No fixed Chinese character count is applied; prioritize complete, natural spoken Chinese."
-        if data["reason"] == "watch_pressure_avoid_unnecessary_expansion":
-            guidance = (
-                "No fixed Chinese character count is applied. Keep the translation natural and complete, "
-                "but avoid unnecessary explanatory expansion."
-            )
-        return (
-            "Disabled for this batch "
-            f"(level={data['level']}, predicted_pressure={data['predicted_pressure']}, reason={data['reason']}). "
-            f"{guidance}"
-        )
-    return "\n".join(
-        [
-            f"- enabled: true",
-            f"- level: {data['level']}",
-            f"- predicted_pressure: {data['predicted_pressure']}",
-            f"- pressure_at_minimum_zh_ratio: {data['pressure_at_min_zh_ratio']}",
-            f"- target_pressure: {data['target_pressure']}",
-            f"- soft_pressure: {data['soft_pressure']}",
-            f"- batch_source_duration_sec: {data['source_duration_sec']}",
-            f"- batch_english_words: {data['english_words']}",
-            f"- estimated_tts_chars_per_sec: {data['estimated_tts_chars_per_sec']}",
-            f"- minimum_zh_chars_per_en_word: {data['min_zh_chars_per_en_word']}",
-            f"- natural_zh_chars_per_en_word: {data['natural_min_zh_chars_per_en_word']}-{data['natural_max_zh_chars_per_en_word']}",
-            f"- target_zh_chars_per_en_word: {data['target_zh_chars_per_en_word']}",
-            f"- max_zh_chars_per_en_word: {data['max_zh_chars_per_en_word']}",
-            f"- minimum_total_chinese_chars: {data['min_zh_chars']}",
-            f"- target_total_chinese_chars: {data['target_zh_chars']}",
-            f"- max_total_chinese_chars: {data['hard_zh_chars']}",
-            "- instruction: this is a per-batch lock. Keep this batch's total Chinese Han-character count "
-            "between minimum_total_chinese_chars and max_total_chinese_chars, aiming near target_total_chinese_chars. "
-            "Count only Chinese Han characters for this range; do not count punctuation, spaces, digits, or Latin names. "
-            "The minimum is a quality floor, not a compression target; the max is the pacing upper limit, not a request "
-            "to make the translation as short as possible. "
-            "Do not intentionally compress or pad this batch to balance other batches. "
-            "If pressure_at_minimum_zh_ratio is already above soft_pressure, do not cut below "
-            "minimum_total_chinese_chars; preserve meaning and accept the pacing risk.",
-        ]
-    )

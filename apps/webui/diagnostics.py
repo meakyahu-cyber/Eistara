@@ -99,10 +99,7 @@ def render_diagnostic_text(summary: dict[str, Any]) -> str:
             "vocal_separation: "
             f"enabled={separation.get('enabled')}; "
             f"provider={separation.get('provider') or '-'}; "
-            f"model={separation.get('audio_separator_model') or '-'}; "
-            f"model_exists={separation.get('audio_separator_model_exists')}; "
-            f"model_valid={separation.get('audio_separator_model_valid')}; "
-            f"onnx_cuda={separation.get('onnx_cuda')}"
+            f"segment_minutes={separation.get('segment_minutes') or '-'}"
         )
     completed = summary.get("completed_stages") or []
     lines.append(f"completed_stages: {', '.join(completed) if completed else '-'}")

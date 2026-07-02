@@ -5,11 +5,12 @@ import os
 import random
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from threading import Lock
-from typing import Any, Protocol
+from typing import Any, Iterable, Protocol
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 
@@ -45,6 +46,9 @@ class HttpTransport(Protocol):
     def post(self, url: str, *, headers: dict[str, str], json: dict[str, Any], timeout: float) -> HttpResponse:
         """HTTP POST."""
 
+    def stream_post(self, url: str, *, headers: dict[str, str], json: dict[str, Any], timeout: float) -> HttpResponse:
+        """Streaming HTTP POST."""
+
 
 class RequestsHttpTransport:
     def __init__(self, *, trust_env: bool = True, proxy_url: str = "") -> None:
@@ -62,9 +66,28 @@ class RequestsHttpTransport:
     def post(self, url: str, *, headers: dict[str, str], json: dict[str, Any], timeout: float) -> HttpResponse:
         return self._session.post(url, headers=headers, json=json, timeout=timeout)
 
+    def stream_post(self, url: str, *, headers: dict[str, str], json: dict[str, Any], timeout: float) -> HttpResponse:
+        return self._session.post(url, headers=headers, json=json, timeout=timeout, stream=True)
+
 
 _CACHE_LOCK = Lock()
 _CACHE_MISS = object()
+_RESPONSES_INSTALLATION_ID = str(uuid.uuid4())
+_RESPONSES_SESSION_ID = str(uuid.uuid4())
+_RESPONSES_THREAD_ID = str(uuid.uuid4())
+_RESPONSES_TURN_ID = str(uuid.uuid4())
+_RESPONSES_WINDOW_ID = f"{_RESPONSES_THREAD_ID}:0"
+_RESPONSES_TURN_METADATA = json.dumps(
+    {
+        "installation_id": _RESPONSES_INSTALLATION_ID,
+        "session_id": _RESPONSES_SESSION_ID,
+        "thread_id": _RESPONSES_THREAD_ID,
+        "turn_id": _RESPONSES_TURN_ID,
+        "window_id": _RESPONSES_WINDOW_ID,
+        "request_kind": "turn",
+    },
+    separators=(",", ":"),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +102,7 @@ class OpenAICompatibleSettings:
     trust_env_proxy: bool = True
     proxy_url: str = ""
     extra_headers: dict[str, str] = field(default_factory=dict)
+    stream_responses: bool = False
     max_retries: int = 6
     retry_base_delay_sec: float = 4.0
     retry_max_delay_sec: float = 60.0
@@ -366,6 +390,98 @@ def build_chat_completion_payload(
     return payload
 
 
+def build_responses_payload(
+    prompt: str,
+    settings: OpenAICompatibleSettings,
+    *,
+    log_title: str,
+    use_cache: bool,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": settings.model,
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": prompt,
+                    }
+                ],
+            }
+        ],
+        "instructions": "",
+        "tools": [],
+        "tool_choice": "auto",
+        "parallel_tool_calls": True,
+        "reasoning": {"effort": "medium"},
+        "store": False,
+        "stream": False,
+        "include": ["reasoning.encrypted_content"],
+        "text": {"verbosity": "low"},
+        "prompt_cache_key": _RESPONSES_THREAD_ID,
+        "client_metadata": {
+            "x-codex-installation-id": _RESPONSES_INSTALLATION_ID,
+            "session_id": _RESPONSES_SESSION_ID,
+            "thread_id": _RESPONSES_THREAD_ID,
+            "turn_id": _RESPONSES_TURN_ID,
+            "x-codex-window-id": _RESPONSES_WINDOW_ID,
+            "x-codex-turn-metadata": _RESPONSES_TURN_METADATA,
+        },
+    }
+    if settings.temperature is not None:
+        payload["temperature"] = settings.temperature
+    return payload
+
+
+class CodexResponsesLlmClient(OpenAICompatibleLlmClient):
+    """OpenAI-compatible client for Codex-like Responses API gateways."""
+
+    def _headers(self) -> dict[str, str]:
+        headers = super()._headers()
+        headers.setdefault("OpenAI-Beta", "responses=experimental")
+        headers.setdefault("originator", "codex_cli_rs")
+        headers.setdefault("x-codex-installation-id", _RESPONSES_INSTALLATION_ID)
+        headers.setdefault("session-id", _RESPONSES_SESSION_ID)
+        headers.setdefault("thread-id", _RESPONSES_THREAD_ID)
+        headers.setdefault("x-client-request-id", _RESPONSES_THREAD_ID)
+        headers.setdefault("x-codex-window-id", _RESPONSES_WINDOW_ID)
+        headers.setdefault("x-codex-turn-metadata", _RESPONSES_TURN_METADATA)
+        return headers
+
+    def _create_chat_completion_content(self, prompt: str, *, resp_type: str, log_title: str, use_cache: bool) -> str:
+        payload = build_responses_payload(prompt, self.settings, log_title=log_title, use_cache=use_cache)
+        stream_post = getattr(self.transport, "stream_post", None)
+        if self.settings.stream_responses and callable(stream_post):
+            return self._post_responses_stream(payload)
+        response = self._post("/responses", payload)
+        return extract_responses_output_text(response)
+
+    def _post_responses_stream(self, payload: dict[str, Any]) -> str:
+        assert self.transport is not None
+        stream_payload = dict(payload)
+        stream_payload["stream"] = True
+        headers = self._headers()
+        headers["Accept"] = "text/event-stream"
+        response = self.transport.stream_post(
+            self._url("/responses"),
+            headers=headers,
+            json=stream_payload,
+            timeout=self.settings.timeout_sec,
+        )
+        try:
+            classify_http_response(response)
+            iter_lines = getattr(response, "iter_lines", None)
+            if not callable(iter_lines):
+                return extract_responses_output_text(decode_response_json(response))
+            return extract_responses_stream_text(iter_lines(decode_unicode=False))
+        finally:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+
+
 def normalize_openai_base_url(base_url: str) -> str:
     text = str(base_url or "").strip()
     if not text:
@@ -440,6 +556,196 @@ def extract_message_content(response_json: Any) -> str:
         return str(response_json["choices"][0]["message"]["content"])
     except Exception as exc:
         raise LlmServiceError("LLM response is missing choices[0].message.content") from exc
+
+
+def extract_responses_output_text(response_json: Any) -> str:
+    if hasattr(response_json, "output_text"):
+        text = str(response_json.output_text or "")
+        if text.strip():
+            return text
+    if isinstance(response_json, dict):
+        text = str(response_json.get("output_text") or "")
+        if text.strip():
+            return text
+        output = response_json.get("output")
+        if isinstance(output, list):
+            parts: list[str] = []
+            for item in output:
+                if not isinstance(item, dict):
+                    continue
+                content = item.get("content")
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict):
+                            block_text = block.get("text") or block.get("output_text")
+                            if block_text:
+                                parts.append(str(block_text))
+                        elif block:
+                            parts.append(str(block))
+                elif content:
+                    parts.append(str(content))
+            text = "".join(parts).strip()
+            if text:
+                return text
+    try:
+        return extract_message_content(response_json)
+    except Exception as exc:
+        raise LlmServiceError("LLM response is missing Responses API output text") from exc
+
+
+def extract_responses_stream_text(lines: Iterable[Any]) -> str:
+    parts: list[str] = []
+    fallback_text = ""
+    raw_parts: list[str] = []
+    for raw_line in lines:
+        line = _stream_line_text(raw_line).strip()
+        if not line:
+            continue
+        if line.startswith("event:"):
+            continue
+        if line.startswith("data:"):
+            line = line[5:].strip()
+        if not line or line == "[DONE]":
+            if line == "[DONE]":
+                break
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            extracted = extract_responses_event_text(line)
+            if extracted:
+                parts.append(extracted)
+                continue
+            raw_parts.append(line)
+            continue
+        if isinstance(event, str):
+            extracted = extract_responses_event_text(event)
+            if extracted:
+                parts.append(extracted)
+                continue
+        delta = _responses_stream_delta(event)
+        if delta:
+            parts.append(delta)
+            continue
+        completed = _responses_stream_completed_text(event)
+        if completed:
+            fallback_text = completed
+        if _responses_stream_event_done(event):
+            break
+    text = "".join(parts).strip()
+    if text:
+        return text
+    if fallback_text.strip():
+        return fallback_text.strip()
+    raw_text = "".join(raw_parts).strip()
+    if raw_text:
+        extracted = extract_responses_event_text(raw_text)
+        if extracted:
+            return extracted
+        return raw_text
+    raise LlmServiceError("LLM streaming response is missing Responses API output text")
+
+
+def extract_responses_event_text(text: str) -> str:
+    decoder = json.JSONDecoder()
+    index = 0
+    parts: list[str] = []
+    fallback_text = ""
+    while index < len(text):
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index >= len(text):
+            break
+        try:
+            event, next_index = decoder.raw_decode(text, index)
+        except json.JSONDecodeError:
+            break
+        if isinstance(event, dict):
+            delta = _responses_stream_delta(event)
+            if delta:
+                parts.append(delta)
+            else:
+                completed = _responses_stream_completed_text(event)
+                if completed:
+                    fallback_text = completed
+            if _responses_stream_event_done(event):
+                break
+        index = next_index
+    joined = "".join(parts).strip()
+    if joined:
+        return joined
+    return fallback_text.strip()
+
+
+def _stream_line_text(raw_line: Any) -> str:
+    if isinstance(raw_line, bytes):
+        return raw_line.decode("utf-8", errors="replace")
+    return str(raw_line)
+
+
+def _responses_stream_delta(event: Any) -> str:
+    if not isinstance(event, dict):
+        return ""
+    delta = event.get("delta")
+    if isinstance(delta, str):
+        return delta
+    if isinstance(delta, dict):
+        text = delta.get("text") or delta.get("content")
+        if isinstance(text, str):
+            return text
+    text = event.get("text")
+    if isinstance(text, str) and str(event.get("type") or "").endswith(".delta"):
+        return text
+    choices = event.get("choices")
+    if isinstance(choices, list) and choices:
+        first = choices[0]
+        if isinstance(first, dict):
+            choice_delta = first.get("delta")
+            if isinstance(choice_delta, dict):
+                content = choice_delta.get("content")
+                if isinstance(content, str):
+                    return content
+                if isinstance(content, list):
+                    return "".join(_content_block_text(block) for block in content)
+    return ""
+
+
+def _responses_stream_completed_text(event: dict[str, Any]) -> str:
+    if str(event.get("type") or "") == "response.output_text.done":
+        text = event.get("text")
+        if isinstance(text, str):
+            return text
+    response = event.get("response")
+    if isinstance(response, dict):
+        try:
+            return extract_responses_output_text(response)
+        except LlmAdapterError:
+            return ""
+    if str(event.get("type") or "") in {"response.completed", "response.done"}:
+        try:
+            return extract_responses_output_text(event)
+        except LlmAdapterError:
+            return ""
+    return ""
+
+
+def _responses_stream_event_done(event: Any) -> bool:
+    if not isinstance(event, dict):
+        return False
+    return str(event.get("type") or "") in {
+        "response.output_text.done",
+        "response.completed",
+        "response.done",
+    }
+
+
+def _content_block_text(block: Any) -> str:
+    if isinstance(block, str):
+        return block
+    if not isinstance(block, dict):
+        return ""
+    text = block.get("text") or block.get("content") or block.get("output_text")
+    return str(text) if text else ""
 
 
 def decode_response_json(response: HttpResponse) -> Any:

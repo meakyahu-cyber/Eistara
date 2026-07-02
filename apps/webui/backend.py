@@ -15,7 +15,6 @@ from typing import Any
 from eistara.config import ConfigLoader
 from eistara.config.loader import DEFAULT_LOCAL_CONFIG, deep_merge, load_mapping
 from eistara.config.youtube_cookies import apply_youtube_cookie_config, browser_cookie_candidates, write_mapping
-from eistara.adapters.asr.audio_separator import audio_separator_model_status
 from eistara.adapters.llm import OpenAICompatibleLlmClient, OpenAICompatibleSettings, RequestsHttpTransport
 from eistara.core.jobs import Job, JobFactory, JsonJobStore, JobStatus, STAGE_ORDER, StageName, history_dir_for_jobs
 from eistara.core.jobs.factory import normalize_task
@@ -614,25 +613,10 @@ class WebUiBackend:
         return Path(self.settings.config_path).expanduser().resolve() if self.settings.config_path else DEFAULT_LOCAL_CONFIG
 
     def _vocal_separation_summary(self, config) -> dict[str, Any]:
-        model_dir = _resolve_project_path(config.demucs.audio_separator_model_dir)
-        model = audio_separator_model_status(model_filename=config.demucs.audio_separator_model, model_dir=model_dir)
-        providers = _onnxruntime_providers()
         return {
             "enabled": config.demucs.enabled,
-            "provider": config.demucs.provider,
+            "provider": "demucs",
             "segment_minutes": config.demucs.segment_minutes,
-            "audio_separator_model": config.demucs.audio_separator_model,
-            "audio_separator_model_dir": str(model_dir),
-            "audio_separator_model_exists": model["exists"],
-            "audio_separator_model_size": model["size"],
-            "audio_separator_model_valid": model["valid"],
-            "audio_separator_model_expected_size": model["expected_size"],
-            "audio_separator_model_expected_md5": model["expected_md5"],
-            "audio_separator_model_md5": model["md5"],
-            "audio_separator_model_url": model["url"],
-            "audio_separator_model_mirror_url": model["mirror_url"],
-            "onnxruntime_providers": providers,
-            "onnx_cuda": "CUDAExecutionProvider" in providers,
         }
 
     def _control_path(self) -> Path:
@@ -683,15 +667,6 @@ def _resolve_project_path(path: str | os.PathLike[str]) -> Path:
     if not candidate.is_absolute():
         candidate = PROJECT_ROOT / candidate
     return candidate.resolve()
-
-
-def _onnxruntime_providers() -> list[str]:
-    try:
-        import onnxruntime as ort
-
-        return [str(provider) for provider in ort.get_available_providers()]
-    except Exception:
-        return []
 
 
 def _nested_set(data: dict[str, Any], parts: tuple[str, ...], value: Any) -> None:

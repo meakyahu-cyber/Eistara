@@ -56,6 +56,7 @@ class DubTimeline:
     segments: tuple[DubTimelineSegment, ...]
     warnings: tuple[str, ...] = ()
     tail_pad_sec: float = 0.0
+    mode: str = "cursor"
 
     @property
     def duration_sec(self) -> float:

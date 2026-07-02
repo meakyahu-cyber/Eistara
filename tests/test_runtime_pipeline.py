@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import io
 import json
+import math
+import struct
+import wave
 from pathlib import Path
 
 from eistara.core.asr import AsrSegment, ScriptedAsrProvider
@@ -28,6 +32,19 @@ class FakeMediaProvider:
         plan.output_video.parent.mkdir(parents=True, exist_ok=True)
         plan.output_video.write_bytes(b"video")
         return MediaCommandResult(("compose", str(plan.source_video), str(plan.output_video)), 0)
+
+
+def _tone_wav_bytes(duration_ms: int = 300, sample_rate: int = 24000) -> bytes:
+    buffer = io.BytesIO()
+    frame_count = max(1, round(sample_rate * duration_ms / 1000))
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(sample_rate)
+        for index in range(frame_count):
+            value = int(12000 * math.sin(2 * math.pi * 440 * index / sample_rate))
+            handle.writeframes(struct.pack("<h", value))
+    return buffer.getvalue()
 
 
 def test_public_pipeline_presets_are_native_v2_only() -> None:
@@ -107,31 +124,6 @@ def test_build_production_runners_accepts_provider_overrides() -> None:
     assert runners[1].asr_provider.name == "scripted"
     assert runners[2].llm is providers.llm_client
     assert runners[4].provider.name == "scripted"
-
-
-def test_build_production_runners_selects_audio_separator_vocal_provider() -> None:
-    config = AppConfig.from_dict(
-        {
-            "api": {"base_url": "http://llm/v1", "model": "m"},
-            "asr": {"provider": "whisper", "model": "tiny"},
-            "demucs": {
-                "enabled": True,
-                "provider": "audio-separator",
-                "audio_separator_model": "UVR-MDX-NET-Voc_FT.onnx",
-                "audio_separator_model_dir": "./models/audio-separator",
-            },
-            "tts_method": "indextts",
-            "batch": {"dependency_probe": False},
-        }
-    )
-
-    runners = build_runners("production", config=config)
-
-    provider = runners[1].vocal_separation_provider
-    assert provider is not None
-    assert provider.name == "audio-separator"
-    assert provider.model_filename == "UVR-MDX-NET-Voc_FT.onnx"
-    assert str(provider.model_dir) == "models\\audio-separator"
 
 
 def test_build_scheduler_uses_config_batch_policy(tmp_path: Path) -> None:
@@ -215,9 +207,10 @@ def test_production_pipeline_contract_can_finish_with_scripted_providers(tmp_pat
     providers = RuntimeProviders(
         media_provider=FakeMediaProvider(),
         asr_provider=ScriptedAsrProvider([AsrSegment(1, 0.0, 1.0, "Hello world")]),
-        llm_client=ScriptedLlmClient([{"translations": [{"id": 1, "text": "你好，世界"}]}]),
-        tts_provider=ScriptedTtsProvider(payload=b"audio"),
+        llm_client=ScriptedLlmClient([{"translations": [{"id": 1, "text": "你好"}]}]),
+        tts_provider=ScriptedTtsProvider(payload=_tone_wav_bytes()),
     )
+    providers.llm_client.responses.append(providers.llm_client.responses[-1])
     service = build_scheduler(jobs_dir, preset="production", config=config, providers=providers)
 
     for _ in STAGE_ORDER:

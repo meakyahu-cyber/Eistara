@@ -357,96 +357,17 @@ def _vocal_separation_settings(st, backend: WebUiBackend, config: dict[str, Any]
         _update_vocal_separation_config(backend, current | {"enabled": enabled})
         st.rerun()
 
-    provider_options = ["demucs", "audio-separator"]
-    provider_labels = {
-        "demucs": ui_t(language, "vocal_provider_demucs"),
-        "audio-separator": ui_t(language, "vocal_provider_audio_separator"),
-    }
-    provider = st.selectbox(
-        ui_t(language, "vocal_provider"),
-        provider_options,
-        index=provider_options.index(current["provider"]) if current["provider"] in provider_options else 0,
-        format_func=lambda value: provider_labels.get(value, value),
-        key="config_demucs_provider",
-        disabled=not enabled,
-    )
-    if provider != current["provider"]:
-        _update_vocal_separation_config(backend, current | {"enabled": enabled, "provider": provider})
-        st.rerun()
-
-    if provider == "audio-separator":
-        model = st.text_input(
-            ui_t(language, "vocal_model"),
-            value=str(current["audio_separator_model"]),
-            key="config_demucs_audio_separator_model",
-            disabled=not enabled,
-        )
-        model_dir = st.text_input(
-            ui_t(language, "vocal_model_dir"),
-            value=str(current["audio_separator_model_dir"]),
-            key="config_demucs_audio_separator_model_dir",
-            disabled=not enabled,
-        )
-        if model != current["audio_separator_model"] or model_dir != current["audio_separator_model_dir"]:
-            _update_vocal_separation_config(
-                backend,
-                current
-                | {
-                    "enabled": enabled,
-                    "provider": provider,
-                    "audio_separator_model": model,
-                    "audio_separator_model_dir": model_dir,
-                },
-            )
-            st.rerun()
-        _render_vocal_separation_status(st, backend, language)
-
-
-def _render_vocal_separation_status(st, backend: WebUiBackend, language: str) -> None:
-    try:
-        status = backend.vocal_separation_status()
-    except Exception as exc:
-        st.caption(f"{ui_t(language, 'vocal_model_status')}: {exc}")
-        return
-    providers = ", ".join(status.get("onnxruntime_providers") or []) or "-"
-    model_exists = bool(status.get("audio_separator_model_exists"))
-    model_valid = status.get("audio_separator_model_valid")
-    model_size = int(status.get("audio_separator_model_size") or 0)
-    if not model_exists:
-        model_label = ui_t(language, "vocal_model_missing")
-    elif model_valid is False:
-        model_label = ui_t(language, "vocal_model_invalid")
-    elif model_valid is True:
-        model_label = ui_t(language, "vocal_model_ready")
-    else:
-        model_label = ui_t(language, "vocal_model_unknown")
-    status_text = (
-        f"{ui_t(language, 'vocal_model_status')}: "
-        f"{model_label} | "
-        f"ONNX CUDA: {'on' if status.get('onnx_cuda') else 'off'} | "
-        f"{providers}"
-    )
-    if model_exists:
-        status_text += f" | {model_size // (1024 * 1024)} MB"
-    st.caption(status_text)
-
 
 def _vocal_separation_config(config: dict[str, Any]) -> dict[str, Any]:
     demucs = config.get("demucs")
     if isinstance(demucs, dict):
         return {
             "enabled": bool(demucs.get("enabled", True)),
-            "provider": str(demucs.get("provider") or "demucs"),
             "segment_minutes": float(demucs.get("segment_minutes") or config.get("demucs_segment_minutes") or 30),
-            "audio_separator_model": str(demucs.get("audio_separator_model") or "UVR-MDX-NET-Voc_FT.onnx"),
-            "audio_separator_model_dir": str(demucs.get("audio_separator_model_dir") or "./models/audio-separator"),
         }
     return {
         "enabled": bool(demucs),
-        "provider": "demucs",
         "segment_minutes": float(config.get("demucs_segment_minutes") or 30),
-        "audio_separator_model": "UVR-MDX-NET-Voc_FT.onnx",
-        "audio_separator_model_dir": "./models/audio-separator",
     }
 
 
@@ -455,10 +376,7 @@ def _update_vocal_separation_config(backend: WebUiBackend, value: dict[str, Any]
         {
             "demucs": {
                 "enabled": bool(value.get("enabled")),
-                "provider": str(value.get("provider") or "demucs"),
                 "segment_minutes": float(value.get("segment_minutes") or 30),
-                "audio_separator_model": str(value.get("audio_separator_model") or "UVR-MDX-NET-Voc_FT.onnx"),
-                "audio_separator_model_dir": str(value.get("audio_separator_model_dir") or "./models/audio-separator"),
             }
         }
     )

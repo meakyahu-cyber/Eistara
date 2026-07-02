@@ -17,6 +17,8 @@ def test_config_loader_defaults() -> None:
 
     assert config.api.base_url == "https://sub.100xlabs.space/v1"
     assert config.api.model == "claude-opus-4-8"
+    assert config.api.llm_interface == "chat_completions"
+    assert config.api.llm_stream is False
     assert config.api.timeout_sec == 300
     assert config.api.user_agent == "curl/8.19.0"
     assert config.api.trust_env_proxy is True
@@ -26,8 +28,23 @@ def test_config_loader_defaults() -> None:
     assert config.target_language == "Simplified Chinese"
     assert config.tts_method == "indextts"
     assert config.indextts["api_url"] == "http://127.0.0.1:8010/tts"
-    assert config.youtube.cookies_from_browser == "firefox"
-    assert config.source_settings().provider_config["cookies_from_browser"] == "firefox"
+    assert config.indextts["duration_control"]["adaptive_source_window_retry"]["enabled"] is True
+    assert config.indextts["duration_control"]["adaptive_source_window_retry"]["low_occupancy_retry_enabled"] is False
+    assert config.tts_settings().audio_config["pacing_quality_check"] is False
+    assert config.youtube.cookies_from_browser == "auto"
+    assert config.source_settings().provider_config["cookies_from_browser"] == "auto"
+    assert config.translation_settings().localization_chars_per_sec == 4.2
+    assert config.translation_settings().localization_spoken_cost_per_sec == 3.6
+    assert config.translation_settings().localization_max_audio_speed == 1.10
+    assert config.translation_settings().localization_seam_gap_sec == 0.12
+    assert config.translation_settings().localization_max_window_gap_sec == 6.0
+    assert config.dub_audio.publish_timeline_mode == "source_window"
+    assert config.dub_audio.publish_max_audio_speed == 1.10
+    assert config.dub_audio.publish_source_window_borrow_enabled is True
+    assert config.dub_audio.publish_source_window_borrow_max_sec == 0.60
+    assert config.dub_audio.publish_source_window_borrow_max_ratio == 0.50
+    assert config.dub_audio.publish_source_window_borrow_min_seam_sec == 0.12
+    assert config.dub_audio.publish_source_window_retime_tier2_enabled is False
     assert config.batch.jobs_dir == Path("jobs")
     assert config.fish_tts["character"] == "AD学姐"
     assert config.fish_tts["character_id_dict"]["丁真"] == "54a5170264694bfc8e9ad98df7bd89c3"
@@ -40,6 +57,8 @@ def test_config_loader_default_api_surface_matches_v1_config() -> None:
         "key": "",
         "base_url": "https://sub.100xlabs.space/v1",
         "model": "claude-opus-4-8",
+        "llm_interface": "chat_completions",
+        "llm_stream": False,
         "llm_support_json": True,
         "proxy_url": "",
     }
@@ -70,7 +89,7 @@ def test_config_loader_env_api_key_overrides_file(tmp_path: Path, monkeypatch) -
 def test_config_loader_get_nested_default() -> None:
     loader = ConfigLoader()
 
-    assert loader.get("translation.publish_fast_chunk_lines") == 30
+    assert loader.get("translation.publish_fast_chunk_lines") == 20
     assert loader.get("missing.value", "fallback") == "fallback"
 
 
@@ -80,6 +99,8 @@ def test_config_loader_reads_yaml_and_builds_settings(tmp_path: Path) -> None:
         """
 api:
   base_url: https://llm.test/v1
+  llm_interface: responses-api
+  llm_stream: true
   user_agent: curl/8.19.0
   trust_env_proxy: true
 summary_length: 1234
@@ -110,6 +131,8 @@ render:
     config = ConfigLoader(path).load()
 
     assert config.api.base_url == "https://llm.test/v1"
+    assert config.api.llm_interface == "responses_api"
+    assert config.api.llm_stream is True
     assert config.api.user_agent == "curl/8.19.0"
     assert config.api.trust_env_proxy is True
     assert config.translation_settings().max_batch_lines == 7
@@ -122,7 +145,7 @@ render:
     assert config.asr_settings().model == "tiny"
     assert config.asr_settings().language == "en"
     assert "provider" not in config.asr_settings().provider_config
-    assert config.asr_settings().provider_config["cookies_from_browser"] == "firefox"
+    assert config.asr_settings().provider_config["cookies_from_browser"] == "auto"
     assert "subtitle_first" not in config.asr_settings().provider_config
     assert config.asr_settings().provider_config["spacy_model_map"]["en"] == "en_core_web_md"
     assert config.asr_settings().provider_config["language_split_with_space"] == ["en", "es", "fr", "de", "it", "ru"]
@@ -166,6 +189,11 @@ batch:
 target_language: Simplified Chinese
 translation:
   publish_fast_chunk_lines: 9
+  localization_chars_per_sec: 4.1
+  localization_spoken_cost_per_sec: 3.7
+  localization_max_audio_speed: 1.15
+  localization_seam_gap_sec: 0.2
+  localization_max_window_gap_sec: 5.5
 demucs: true
 demucs_segment_minutes: 12
 whisper:
@@ -193,6 +221,7 @@ indextts:
   prompt_audio_mode: auto_ref
   auto_prompt_target_sec: 15
 dub_audio:
+  publish_timeline_mode: source_window
   background_bed_mode: source
   final_loudnorm_i: -18
 allowed_video_formats:
@@ -212,6 +241,11 @@ allowed_video_formats:
     assert "quality" not in config.batch.stage_idle_timeouts()
     assert config.batch.dependency_probe is False
     assert config.batch.max_auto_requeues == 4
+    assert config.translation_settings().localization_chars_per_sec == 4.1
+    assert config.translation_settings().localization_spoken_cost_per_sec == 3.7
+    assert config.translation_settings().localization_max_audio_speed == 1.15
+    assert config.translation_settings().localization_seam_gap_sec == 0.2
+    assert config.translation_settings().localization_max_window_gap_sec == 5.5
     assert config.asr.model == "large-v3"
     assert config.asr.language == "ja"
     assert config.asr.provider == "local"
@@ -219,7 +253,6 @@ allowed_video_formats:
     assert config.asr_settings().provider_config["print_progress"] is True
     assert config.demucs.enabled is True
     assert config.demucs.segment_minutes == 12
-    assert config.demucs.provider == "demucs"
     assert "subtitle_first" not in config.asr_settings().provider_config
     assert config.source.resolution == "720"
     assert config.source_settings().provider_config["cookies_from_browser"] == "firefox"
@@ -234,30 +267,9 @@ allowed_video_formats:
     assert config.tts_settings().audio_config["merge_micro_lines"] is False
     assert config.tts_settings().audio_config["ffmpeg_path"] == config.media.ffmpeg_path
     assert config.indextts["auto_prompt_target_sec"] == 15
+    assert config.dub_audio.publish_timeline_mode == "source_window"
     assert config.dub_audio.background_bed_mode == "source"
     assert config.dub_audio.final_loudnorm_i == -18
-
-
-def test_config_loader_reads_audio_separator_vocal_backend() -> None:
-    config = AppConfig.from_dict(
-        {
-            "demucs": {
-                "enabled": True,
-                "provider": "audio-separator",
-                "segment_minutes": 9,
-                "audio_separator_model": "UVR-MDX-NET-Voc_FT.onnx",
-                "audio_separator_model_dir": "./models/audio-separator",
-            }
-        }
-    )
-
-    assert config.demucs.enabled is True
-    assert config.demucs.provider == "audio-separator"
-    assert config.demucs.segment_minutes == 9
-    assert config.demucs.audio_separator_model == "UVR-MDX-NET-Voc_FT.onnx"
-    assert str(config.demucs.audio_separator_model_dir) == "models\\audio-separator"
-    assert config.asr_settings().provider_config["vocal_separation_provider"] == "audio-separator"
-
 
 def test_config_loader_uses_v1_whisper_runtime_as_asr_route() -> None:
     assert ConfigLoader(local_config=False).load().asr.provider == "local"

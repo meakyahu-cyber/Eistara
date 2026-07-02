@@ -45,7 +45,6 @@ The installer will:
 - install PyTorch, WhisperX, Demucs, yt-dlp, and WebUI deps;
 - cache the default `Systran/faster-whisper-large-v3` ASR model;
 - prefetch the Demucs `htdemucs` checkpoint;
-- download the optional UVR-MDX model used by the audio-separator backend;
 - create `config.local.yaml` from `config.example.yaml` when missing.
 
 It will not install FFmpeg, CUDA Toolkit, CUDNN, IndexTTS, or any TTS model.

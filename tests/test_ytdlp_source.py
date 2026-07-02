@@ -9,6 +9,7 @@ from eistara.adapters.source.ytdlp import (
     build_ytdlp_args,
     build_ytdlp_options,
 )
+from eistara.config.youtube_cookies import BrowserCookieCandidate
 from eistara.core.source import SourceProviderError, SourceRequest, SourceSettings
 
 
@@ -85,6 +86,21 @@ def test_ytdlp_source_provider_raises_on_failure(tmp_path: Path) -> None:
         raise AssertionError("expected SourceProviderError")
 
 
+def test_ytdlp_source_provider_adds_cookie_hint_on_login_failure(tmp_path: Path, capsys) -> None:
+    provider = YtDlpSourceProvider(
+        runner=FakeRunner(CompletedProcess(args=[], returncode=1, stdout="", stderr="Sign in to confirm you are not a bot"), [])
+    )
+
+    try:
+        provider.acquire(SourceRequest("https://example.com/v", "url", tmp_path / "output"), SourceSettings(provider_config={"use_python_api": False}))
+    except SourceProviderError as exc:
+        assert "system default browser" in str(exc)
+    else:
+        raise AssertionError("expected SourceProviderError")
+
+    assert "system default browser" in capsys.readouterr().out
+
+
 def test_build_ytdlp_options_uses_browser_cookies_and_runtime() -> None:
     options = build_ytdlp_options(
         "https://example.com/v",
@@ -96,6 +112,43 @@ def test_build_ytdlp_options_uses_browser_cookies_and_runtime() -> None:
     assert options["cookiesfrombrowser"] == ("firefox", "default", None, None)
     assert "height<=720" in options["format"]
     assert options["progress_delta"] == 5
+
+
+def test_build_ytdlp_options_auto_uses_default_browser(monkeypatch) -> None:
+    def fake_resolve(browser: str, profile: str = "") -> BrowserCookieCandidate:
+        assert browser == "auto"
+        assert profile == ""
+        return BrowserCookieCandidate("firefox", source="default_browser")
+
+    monkeypatch.setattr("eistara.adapters.source.ytdlp.resolve_browser_cookie_candidate", fake_resolve)
+
+    options = build_ytdlp_options(
+        "https://example.com/v",
+        "out.%(ext)s",
+        "720",
+        SourceSettings(provider_config={"cookies_from_browser": "auto"}),
+    )
+
+    assert options["cookiesfrombrowser"] == ("firefox", None, None, None)
+
+
+def test_process_ytdlp_auto_uses_default_browser_cookie_args(monkeypatch, tmp_path: Path) -> None:
+    def fake_resolve(browser: str, profile: str = "") -> BrowserCookieCandidate:
+        assert browser == "auto"
+        assert profile == ""
+        return BrowserCookieCandidate("firefox", source="default_browser")
+
+    monkeypatch.setattr("eistara.adapters.source.ytdlp.resolve_browser_cookie_candidate", fake_resolve)
+    runner = FakeRunner(CompletedProcess(args=[], returncode=0, stdout="ok", stderr=""), [], tmp_path / "output" / "source_video.webm")
+    provider = YtDlpSourceProvider(runner=runner, executable="yt-dlp.exe")
+
+    provider.acquire(
+        SourceRequest("https://example.com/v", "url", tmp_path / "output", resolution="720"),
+        SourceSettings(provider_config={"use_python_api": False, "cookies_from_browser": "auto"}),
+    )
+
+    assert "--cookies-from-browser" in runner.calls[0]
+    assert runner.calls[0][runner.calls[0].index("--cookies-from-browser") + 1] == "firefox"
 
 
 def test_build_ytdlp_options_accepts_explicit_browser_alias() -> None:
@@ -142,5 +195,4 @@ def test_build_ytdlp_options_enables_thumbnail_postprocessor() -> None:
 
     assert options["writethumbnail"] is True
     assert options["postprocessors"] == [{"key": "FFmpegThumbnailsConvertor", "format": "jpg"}]
-
 

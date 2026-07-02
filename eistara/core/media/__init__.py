@@ -7,6 +7,7 @@ from .plans import (
     build_compose_video_plan,
 )
 from .providers import MediaProbe, MediaProvider
+from .source import SOURCE_AUDIO_DURATION_KEYS, source_duration_sec
 
 __all__ = [
     "AudioExtractPlan",
@@ -17,7 +18,9 @@ __all__ = [
     "MediaProbe",
     "MediaProbeError",
     "MediaProvider",
+    "SOURCE_AUDIO_DURATION_KEYS",
     "VideoStreamInfo",
     "build_audio_extract_plan",
     "build_compose_video_plan",
+    "source_duration_sec",
 ]

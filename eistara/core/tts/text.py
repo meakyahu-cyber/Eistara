@@ -43,5 +43,4 @@ def clean_text_for_tts(text: str) -> str:
 
 
 def is_silent_tts_text(text: str) -> bool:
-    stripped = "".join(ch for ch in str(text) if ch.isalnum())
-    return len(stripped) <= 1
+    return not any(ch.isalnum() for ch in str(text))

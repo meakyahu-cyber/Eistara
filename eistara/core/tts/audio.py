@@ -45,3 +45,28 @@ def has_positive_audio_duration(path: str | Path) -> bool:
     if audio_path.suffix.lower() in {".wav", ".wave"}:
         return False
     return is_usable_media_file(audio_path, require_audio=True)
+
+
+def has_audible_audio(path: str | Path) -> bool:
+    audio_path = Path(path)
+    if not has_positive_audio_duration(audio_path):
+        return False
+    try:
+        from pydub import AudioSegment
+
+        audio = AudioSegment.from_file(audio_path)
+        return len(audio) > 0 and audio.max_dBFS != float("-inf")
+    except Exception:
+        pass
+    if audio_path.suffix.lower() not in {".wav", ".wave"}:
+        return True
+    try:
+        with wave.open(str(audio_path), "rb") as handle:
+            while True:
+                frames = handle.readframes(4096)
+                if not frames:
+                    return False
+                if any(byte != 0 for byte in frames):
+                    return True
+    except (OSError, EOFError, wave.Error):
+        return False

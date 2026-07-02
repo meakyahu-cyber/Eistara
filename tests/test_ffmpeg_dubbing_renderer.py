@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import argparse
+import json
 import wave
 from dataclasses import dataclass
 from pathlib import Path
 from subprocess import CompletedProcess
 
+from apps.cli.main import cmd_render
 from eistara.adapters.media import FfmpegDubbingRenderer, build_audio_mix_ffmpeg_args
 from eistara.core.dubbing import AudioClipPlacement, AudioMixPlan
 
@@ -74,6 +77,7 @@ def test_build_audio_mix_ffmpeg_args_applies_v1_clip_processing() -> None:
         clip_fade_in_ms=5,
         clip_fade_out_ms=220,
         clip_tail_pad_ms=220,
+        clip_tail_pad_counts_in_timeline=True,
         clip_tail_cleanup=True,
         clip_tail_cleanup_ms=420,
         clip_tail_cleanup_lowpass_hz=3600,
@@ -90,21 +94,63 @@ def test_build_audio_mix_ffmpeg_args_applies_v1_clip_processing() -> None:
     assert "afade=t=out:st=0.780:d=0.220" in joined
 
 
-def test_build_audio_mix_ffmpeg_args_applies_global_audio_speed_after_mix() -> None:
+def test_build_audio_mix_ffmpeg_args_applies_clip_audio_speed_per_clip() -> None:
     plan = AudioMixPlan(
-        clips=(AudioClipPlacement("1", Path("a.wav"), start_sec=0.5, end_sec=10.5),),
+        clips=(AudioClipPlacement("1", Path("a.wav"), start_sec=0.5, end_sec=10.5, speed=1.10),),
         output_audio=Path("dub.mp3"),
-        duration_sec=8.607,
-        pre_speed_duration_sec=10.5,
-        global_audio_speed=1.22,
+        duration_sec=9.591,
+        global_audio_speed=1.0,
     )
 
     args = build_audio_mix_ffmpeg_args(plan)
     joined = " ".join(args)
 
-    assert "apad=whole_dur=10.500" in joined
-    assert "atempo=1.220000" in joined
-    assert args[args.index("-t") + 1] == "8.607"
+    assert "atempo=1.100000[clip0speed]" in joined
+    assert "[clip0speed]adelay=500|500" in joined
+    assert "[mixpre]atempo" not in joined
+    assert "apad=whole_dur=9.791" in joined
+    assert args[args.index("-t") + 1] == "9.591"
+
+
+def test_build_audio_mix_ffmpeg_args_ignores_global_audio_speed_without_clip_speed() -> None:
+    plan = AudioMixPlan(
+        clips=(AudioClipPlacement("1", Path("a.wav"), start_sec=0.5, end_sec=10.5),),
+        output_audio=Path("dub.mp3"),
+        duration_sec=9.591,
+        global_audio_speed=1.10,
+    )
+
+    args = build_audio_mix_ffmpeg_args(plan)
+    joined = " ".join(args)
+
+    assert "atempo=1.100000" not in joined
+
+
+def test_cli_render_audio_mix_preserves_clip_speed_and_tail_pad_mode(tmp_path: Path, capsys) -> None:
+    plan = AudioMixPlan(
+        clips=(AudioClipPlacement("1", Path("a.wav"), start_sec=0.5, end_sec=1.72, speed=1.10),),
+        output_audio=Path("dub.mp3"),
+        duration_sec=1.6,
+        clip_tail_pad_ms=220,
+        clip_tail_pad_counts_in_timeline=True,
+    )
+    plan_json = tmp_path / "audio_mix_plan.json"
+    plan_json.write_text(json.dumps(plan.to_dict(), ensure_ascii=False), encoding="utf-8")
+
+    rc = cmd_render(
+        argparse.Namespace(
+            render_command="audio-mix",
+            plan_json=str(plan_json),
+            ffmpeg="ffmpeg",
+            dry_run=True,
+        )
+    )
+
+    assert rc == 0
+    output = json.loads(capsys.readouterr().out)
+    joined = " ".join(output["ffmpeg_args"])
+    assert "atempo=1.100000[clip0speed]" in joined
+    assert "afade=t=out:st=0.780:d=0.220" in joined
 
 
 def test_ffmpeg_dubbing_renderer_runs_audio_mix_command(tmp_path: Path) -> None:

@@ -6,14 +6,18 @@ from pathlib import Path
 from typing import Any
 
 from eistara.adapters.llm import (
+    CodexResponsesLlmClient,
     LlmRequestError,
     LlmServiceError,
     OpenAICompatibleLlmClient,
     OpenAICompatibleSettings,
     build_chat_completion_payload,
+    build_responses_payload,
+    extract_responses_output_text,
     normalize_openai_base_url,
     parse_json_content,
 )
+from eistara.adapters.llm.openai_compatible import extract_responses_stream_text
 
 
 @dataclass(slots=True)
@@ -68,6 +72,36 @@ def test_build_chat_completion_payload_requests_json() -> None:
     assert payload["response_format"] == {"type": "json_object"}
     assert "metadata" not in payload
     assert "temperature" not in payload
+
+
+def test_build_responses_payload_uses_input() -> None:
+    payload = build_responses_payload(
+        "translate this",
+        OpenAICompatibleSettings(base_url="http://x/v1", model="model-a"),
+        log_title="title",
+        use_cache=False,
+    )
+
+    assert payload["model"] == "model-a"
+    assert payload["input"] == [
+        {
+            "type": "message",
+            "role": "user",
+            "content": [{"type": "input_text", "text": "translate this"}],
+        }
+    ]
+    assert payload["instructions"] == ""
+    assert payload["tools"] == []
+    assert payload["tool_choice"] == "auto"
+    assert payload["parallel_tool_calls"] is True
+    assert payload["reasoning"] == {"effort": "medium"}
+    assert payload["store"] is False
+    assert payload["stream"] is False
+    assert payload["include"] == ["reasoning.encrypted_content"]
+    assert payload["text"] == {"verbosity": "low"}
+    assert payload["prompt_cache_key"]
+    assert payload["client_metadata"]["thread_id"] == payload["prompt_cache_key"]
+    assert payload["client_metadata"]["x-codex-turn-metadata"]
 
 
 def test_openai_compatible_defaults_match_v1_ask_gpt_runtime() -> None:
@@ -133,6 +167,77 @@ def test_openai_compatible_client_ask_json(tmp_path: Path) -> None:
     assert transport.post_calls[0]["url"] == "http://localhost:8000/v1/chat/completions"
     assert transport.post_calls[0]["headers"]["Authorization"] == "Bearer key"
     assert transport.post_calls[0]["headers"]["User-Agent"] == "curl/8.19.0"
+
+
+def test_codex_responses_client_ask_json(tmp_path: Path) -> None:
+    transport = FakeTransport(FakeResponse(data={"output_text": '{"ok": true}'}))
+    client = CodexResponsesLlmClient(
+        OpenAICompatibleSettings(base_url="http://localhost:8000/v1", model="m", api_key="key", cache_dir=tmp_path),
+        transport,
+    )
+
+    result = client.ask_json("prompt", log_title="translate", use_cache=True)
+
+    assert result == {"ok": True}
+    assert transport.post_calls[0]["url"] == "http://localhost:8000/v1/responses"
+    assert transport.post_calls[0]["headers"]["OpenAI-Beta"] == "responses=experimental"
+    assert transport.post_calls[0]["headers"]["originator"] == "codex_cli_rs"
+    assert transport.post_calls[0]["json"]["model"] == "m"
+    assert transport.post_calls[0]["json"]["input"] == [
+        {
+            "type": "message",
+            "role": "user",
+            "content": [{"type": "input_text", "text": "prompt"}],
+        }
+    ]
+    assert transport.post_calls[0]["json"]["instructions"] == ""
+    assert transport.post_calls[0]["json"]["store"] is False
+    assert transport.post_calls[0]["json"]["reasoning"] == {"effort": "medium"}
+    assert transport.post_calls[0]["json"]["include"] == ["reasoning.encrypted_content"]
+    assert transport.post_calls[0]["json"]["client_metadata"]["thread_id"]
+
+
+def test_openai_responses_extracts_nested_output_text() -> None:
+    response = {
+        "output": [
+            {
+                "type": "message",
+                "content": [
+                    {"type": "output_text", "text": '{"ok":'},
+                    {"type": "output_text", "text": " true}"},
+                ],
+            }
+        ]
+    }
+
+    assert extract_responses_output_text(response) == '{"ok": true}'
+
+
+def test_openai_responses_stream_extracts_concatenated_events() -> None:
+    lines = [
+        '{"type":"response.output_text.delta","delta":"{\\"ok\\":"}'
+        '{"type":"response.output_text.delta","delta":" true}"}'
+        '{"type":"response.output_text.done","text":"{\\"ignored\\": true}"}'
+    ]
+
+    assert extract_responses_stream_text(lines) == '{"ok": true}'
+
+
+def test_openai_responses_stream_decodes_utf8_bytes() -> None:
+    lines = [
+        '{"type":"response.output_text.delta","delta":"{\\"text\\": \\"浣犲ソ\\"}"}'.encode("utf-8"),
+    ]
+
+    assert extract_responses_stream_text(lines) == '{"text": "浣犲ソ"}'
+
+
+def test_openai_responses_stream_stops_on_done_event() -> None:
+    lines = [
+        '{"type":"response.output_text.done","text":"{\\"ok\\": true}"}',
+        "this should not be parsed",
+    ]
+
+    assert extract_responses_stream_text(lines) == '{"ok": true}'
 
 
 def test_openai_compatible_client_decodes_transport_json_as_utf8_bytes(tmp_path: Path) -> None:

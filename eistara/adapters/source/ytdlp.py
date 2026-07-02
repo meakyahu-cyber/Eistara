@@ -25,6 +25,22 @@ from eistara.core.source import (
 from eistara.config.youtube_cookies import resolve_browser_cookie_candidate
 
 
+YOUTUBE_COOKIE_LOGIN_HINT = (
+    "YouTube download needs browser cookies. "
+    "Please sign in to YouTube in your system default browser, then retry the download."
+)
+
+YOUTUBE_COOKIE_ERROR_MARKERS = (
+    "sign in to confirm",
+    "not a bot",
+    "cookies-from-browser",
+    "pass cookies",
+    "failed to load cookies",
+    "could not copy chrome cookie database",
+    "cookie database",
+)
+
+
 GENERATED_VIDEO_NAMES = {
     "output.mp4",
     "output_dub.mp4",
@@ -122,11 +138,11 @@ class YtDlpSourceProvider:
             output_template,
             request.resolution,
             self.executable,
-            extra_args=_extra_args(settings),
+            extra_args=[*_cookie_cli_args(settings.provider_config), *_extra_args(settings)],
         )
         result = self.runner.run(args)
         if result.returncode != 0:
-            raise SourceProviderError((result.stderr or result.stdout or "yt-dlp failed").strip())
+            raise SourceProviderError(_with_youtube_cookie_hint((result.stderr or result.stdout or "yt-dlp failed").strip()))
         _rename_sanitized_files(request.output_dir)
         source_video = _find_downloaded_video(request.output_dir, allowed_video_formats(settings))
         if source_video is None:
@@ -147,7 +163,7 @@ class YtDlpSourceProvider:
                 with YoutubeDL(options) as ydl:
                     ydl.download([request.source])
         except Exception as exc:
-            raise SourceProviderError(str(exc)) from exc
+            raise SourceProviderError(_with_youtube_cookie_hint(str(exc))) from exc
         _rename_sanitized_files(request.output_dir)
         source_video = _find_downloaded_video(request.output_dir, allowed_video_formats(settings))
         if source_video is None:
@@ -187,6 +203,23 @@ def _extra_args(settings: SourceSettings) -> list[str]:
     return []
 
 
+def _cookie_cli_args(provider_config: Mapping[str, Any] | None = None) -> list[str]:
+    config = provider_config or {}
+    cookies_path = str(config.get("cookies_path") or "").strip()
+    if cookies_path and Path(cookies_path).exists():
+        return ["--cookies", cookies_path]
+    cookies_browser = str(config.get("cookies_from_browser") or "").strip()
+    if not cookies_browser:
+        return []
+    cookies_profile = str(config.get("cookies_browser_profile") or "").strip()
+    resolved = resolve_browser_cookie_candidate(cookies_browser, cookies_profile)
+    if resolved:
+        cookies_browser = resolved.browser
+        cookies_profile = resolved.profile or cookies_profile
+    cookie_source = f"{cookies_browser}:{cookies_profile}" if cookies_profile else cookies_browser
+    return ["--cookies-from-browser", cookie_source]
+
+
 def build_ytdlp_options(source: str, output_template: str, resolution: str, settings: SourceSettings) -> dict:
     config = settings.provider_config
     options = {
@@ -199,6 +232,7 @@ def build_ytdlp_options(source: str, output_template: str, resolution: str, sett
         "noprogress": True,
         "progress_delta": 5,
         "consoletitle": False,
+        "encoding": "utf-8",
         "color": {"stdout": "auto", "stderr": "auto"},
         "progress_hooks": [_download_progress_hook],
     }
@@ -234,6 +268,16 @@ def apply_common_ytdlp_options(options: dict[str, Any], provider_config: Mapping
                 cookies_profile = resolved.profile or cookies_profile
             options["cookiesfrombrowser"] = (cookies_browser, cookies_profile, None, None)
     return options
+
+
+def _with_youtube_cookie_hint(message: str) -> str:
+    text = str(message or "").strip()
+    lowered = text.lower()
+    if any(marker in lowered for marker in YOUTUBE_COOKIE_ERROR_MARKERS):
+        if YOUTUBE_COOKIE_LOGIN_HINT not in text:
+            print(YOUTUBE_COOKIE_LOGIN_HINT)
+            return f"{text}\n\n{YOUTUBE_COOKIE_LOGIN_HINT}"
+    return text
 
 
 def sanitize_filename(filename: str) -> str:
