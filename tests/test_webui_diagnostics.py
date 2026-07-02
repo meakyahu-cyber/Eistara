@@ -79,8 +79,10 @@ def test_webui_diagnostic_summary_separates_internal_artifacts(tmp_path: Path) -
     internal_dir = job_dir / "output" / "internal"
     internal_dir.mkdir(parents=True)
     (internal_dir / "translations.json").write_text('{"translations":[]}', encoding="utf-8")
+    (internal_dir / "tts_segments.json").write_text('{"segments":[]}', encoding="utf-8")
     state = json.loads((job_dir / STATE_FILE).read_text(encoding="utf-8"))
     state["artifacts"]["translations_json"] = str(internal_dir / "translations.json")
+    state["artifacts"]["tts_segments_json"] = str(internal_dir / "tts_segments.json")
     (job_dir / STATE_FILE).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     backend = WebUiBackend(WebUiSettings(jobs_dir))
 
@@ -88,6 +90,7 @@ def test_webui_diagnostic_summary_separates_internal_artifacts(tmp_path: Path) -
 
     assert all(item["role"] != "translations" for item in summary["outputs"])
     assert {"role": "translations", "filename": "translations.json", "exists": True, "size": 19} in summary["internal_artifacts"]
+    assert {"role": "tts_segments", "filename": "tts_segments.json", "exists": True, "size": 15} in summary["internal_artifacts"]
 
 
 def test_webui_diagnostic_package_redacts_secrets_and_excludes_media(tmp_path: Path) -> None:

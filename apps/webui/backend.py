@@ -406,6 +406,7 @@ class WebUiBackend:
             ("dub_video", artifacts.get("dub_video"), "video"),
             ("translations", artifacts.get("translations_json"), "internal"),
             ("subtitle_rows", artifacts.get("subtitle_rows_json"), "internal"),
+            ("tts_segments", artifacts.get("tts_segments_json"), "internal"),
         ]
         fallback_names = {
             "source_video": ("source_video.mp4", "source_video.webm"),
@@ -417,6 +418,7 @@ class WebUiBackend:
             "dub_video": ("output_dub.mp4",),
             "translations": ("internal/translations.json", "translations.json"),
             "subtitle_rows": ("internal/subtitle_rows.json", "subtitle_rows.json"),
+            "tts_segments": ("internal/tts_segments.json",),
         }
         rows: list[dict[str, Any]] = []
         for role, configured, kind in candidates:

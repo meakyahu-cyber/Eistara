@@ -41,11 +41,11 @@ def build_source_window_publish_retime_info(
     effective_max_audio_speed = float(clip_speed_info.get("max_audio_speed") or service.publish_max_audio_speed)
     capped_count = int(clip_speed_info.get("clip_audio_speed_capped_count") or 0)
     borrowed_count = int(clip_speed_info.get("source_window_borrowed_count") or 0)
-    unresolved_duration = 0.0
+    total_duration_overflow = 0.0
     if source_scaled_duration is not None:
-        unresolved_duration = max(0.0, timeline_duration - source_scaled_duration)
+        total_duration_overflow = max(0.0, timeline_duration - source_scaled_duration)
     else:
-        unresolved_duration = float(clip_speed_info.get("max_clip_overflow_after_speed_sec") or 0.0)
+        total_duration_overflow = float(clip_speed_info.get("max_clip_overflow_after_speed_sec") or 0.0)
 
     if not service.publish_global_audio_speed:
         reason = "clip_audio_speed_disabled"
@@ -88,7 +88,7 @@ def build_source_window_publish_retime_info(
         "source_window_borrowed_max_sec": float(clip_speed_info.get("source_window_borrowed_max_sec") or 0.0),
         "audio_speed_capped": capped_count > 0,
         "source_window_audio_speed_capped": capped_count > 0,
-        "unresolved_retime_overflow_sec": round(unresolved_duration, 3),
+        "total_duration_overflow_sec": round(total_duration_overflow, 3),
         "max_clip_overflow_after_speed_sec": float(clip_speed_info.get("max_clip_overflow_after_speed_sec") or 0.0),
         "projected_final_dub_duration_sec": round(final_duration, 3),
         "projected_video_speed": round(final_video_speed, 3),
@@ -130,7 +130,7 @@ def build_publish_retime_info(
         "applied_audio_speed": 1.0,
         "audio_speed_capped": False,
         "source_window_audio_speed_capped": False,
-        "unresolved_retime_overflow_sec": 0.0,
+        "total_duration_overflow_sec": 0.0,
         "projected_final_dub_duration_sec": round(current_duration, 3),
         "projected_video_speed": None,
         "reason": "",
@@ -185,9 +185,9 @@ def build_publish_retime_info(
     )
     natural_video_speed = source_duration / final_duration
     projected_video_speed = max(target_video_speed_min, natural_video_speed)
-    unresolved_duration = max(0.0, final_duration - (source_duration / projected_video_speed))
+    total_duration_overflow = max(0.0, final_duration - (source_duration / projected_video_speed))
     audio_speed_capped = speed < wanted_speed - 0.001 or (
-        speed >= max_audio_speed - 0.001 and unresolved_duration > 0.001
+        speed >= max_audio_speed - 0.001 and total_duration_overflow > 0.001
     )
     info.update(
         {
@@ -198,10 +198,10 @@ def build_publish_retime_info(
             "projected_final_dub_duration_sec": round(final_duration, 3),
             "projected_video_speed": round(projected_video_speed, 3),
             "video_speed_capped": projected_video_speed > natural_video_speed + 0.001,
-            "unresolved_retime_overflow_sec": round(unresolved_duration, 3),
+            "total_duration_overflow_sec": round(total_duration_overflow, 3),
             "reason": (
                 "speeding_dub_and_video_limited_by_caps"
-                if unresolved_duration > 0.001
+                if total_duration_overflow > 0.001
                 else "speeding_dub_for_source_window_fit"
                 if min_window_audio_speed > global_wanted_speed + 0.001
                 else "speeding_dub_to_reach_target_video_speed"

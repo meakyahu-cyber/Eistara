@@ -73,7 +73,16 @@ class TextDurationTtsProvider:
 
 
 def test_clean_text_for_tts_folds_latin_diacritics() -> None:
-    assert clean_text_for_tts("Björn™ & São") == "Bjorn  Sao"
+    assert clean_text_for_tts("Bj\u00f6rn\u2122 & S\u00e3o") == "Bjorn & Sao"
+
+
+def test_clean_text_for_tts_preserves_ampersand_brand_text() -> None:
+    assert clean_text_for_tts("AT&T") == "AT&T"
+
+
+def test_clean_text_for_tts_drops_symbol_codepoints_not_cjk_lookalikes() -> None:
+    assert clean_text_for_tts("A\u00aeB\u2122C\u00a9D") == "ABCD"
+    assert clean_text_for_tts("\u5e90\u6f0f\u9229") == "\u5e90\u6f0f\u9229"
 
 
 def test_clean_text_for_tts_removes_decomposed_latin_diacritics() -> None:
@@ -620,6 +629,73 @@ def test_tts_prepare_stage_runner_writes_v1_task_sheet(tmp_path: Path) -> None:
     assert result.outputs["tts_segments"][0]["output_path"].endswith("output\\audio\\tmp\\1_0_temp.wav") or result.outputs[
         "tts_segments"
     ][0]["output_path"].endswith("output/audio/tmp/1_0_temp.wav")
+
+
+def test_tts_prepare_stage_runner_preserves_literal_cjk_mojibake_lookalikes(tmp_path: Path) -> None:
+    text = "\u951b\u573c^\u951b\u5862*\u951b? \u6b63\u6587"
+
+    result = TtsPrepareStageRunner().run(
+        StageContext(
+            "job",
+            tmp_path,
+            {
+                "output_dir": str(tmp_path / "output"),
+                "tts_segments": [{"id": 1, "start": 0.0, "end": 1.0, "source": "src", "text": text}],
+            },
+            StageName.TTS_PREPARE,
+            1,
+        )
+    )
+
+    row = pd.read_excel(result.outputs["tts_tasks"]).to_dict(orient="records")[0]
+    assert row["text"] == text
+    assert result.outputs["tts_segments"][0]["text"] == text
+
+
+def test_tts_prepare_stage_runner_preserves_meaningful_hyphens(tmp_path: Path) -> None:
+    result = TtsPrepareStageRunner().run(
+        StageContext(
+            "job",
+            tmp_path,
+            {
+                "output_dir": str(tmp_path / "output"),
+                "tts_segments": [
+                    {
+                        "id": 1,
+                        "start": 0.0,
+                        "end": 1.0,
+                        "source": "src",
+                        "text": "T-Mobile uses GPT-5.5",
+                    }
+                ],
+            },
+            StageName.TTS_PREPARE,
+            1,
+        )
+    )
+
+    row = pd.read_excel(result.outputs["tts_tasks"]).to_dict(orient="records")[0]
+    assert row["text"] == "T-Mobile uses GPT-5.5"
+    assert result.outputs["tts_segments"][0]["text"] == "T-Mobile uses GPT-5.5"
+
+
+def test_tts_prepare_stage_runner_cleans_separator_hyphens(tmp_path: Path) -> None:
+    result = TtsPrepareStageRunner().run(
+        StageContext(
+            "job",
+            tmp_path,
+            {
+                "output_dir": str(tmp_path / "output"),
+                "tts_segments": [{"id": 1, "start": 0.0, "end": 1.0, "source": "src", "text": "Hello (aside)-world"}],
+            },
+            StageName.TTS_PREPARE,
+            1,
+        )
+    )
+
+    row = pd.read_excel(result.outputs["tts_tasks"]).to_dict(orient="records")[0]
+    assert row["text"] == "Hello world"
+    assert result.outputs["tts_segments"][0]["text"] == "Hello world"
 
 
 def test_tts_prepare_stage_runner_reads_tts_segments_json(tmp_path: Path) -> None:

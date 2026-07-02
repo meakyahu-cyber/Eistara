@@ -26,9 +26,6 @@ indextts:
   api_url: "http://127.0.0.1:8010/tts"
   prompt_audio_mode: auto_ref
   duration_control:
-    enabled: false
-    target_duration_sec:
-    duration_scale:
     adaptive_source_window_retry:
       enabled: true
       target_scale: 1.0

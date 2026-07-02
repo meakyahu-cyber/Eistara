@@ -477,7 +477,7 @@ def test_audio_mix_plan_stage_runner_applies_v1_global_audio_speed(tmp_path: Pat
     assert report["applied_audio_speed"] == 1.1
     assert report["audio_speed_capped"] is True
     assert report["video_speed_capped"] is True
-    assert report["unresolved_retime_overflow_sec"] == pytest.approx(4.335)
+    assert report["total_duration_overflow_sec"] == pytest.approx(4.335)
     assert report["reason"] == "speeding_dub_and_video_limited_by_caps"
     row = pd.read_excel(tts_tasks).to_dict(orient="records")[0]
     assert ast.literal_eval(row["new_sub_times"]) == [[0.3, 9.391]]
@@ -628,7 +628,7 @@ def test_audio_mix_plan_source_window_stretch_caps_and_uses_clip_speed(tmp_path:
     assert report["applied_audio_speed"] == pytest.approx(1.1)
     assert report["source_window_audio_speed_capped"] is False
     assert report["final_video_speed"] == pytest.approx(0.917)
-    assert report["unresolved_retime_overflow_sec"] == 0.0
+    assert report["total_duration_overflow_sec"] == 0.0
 
     plan = json.loads(Path(result.outputs["audio_mix_plan"]).read_text(encoding="utf-8"))
     assert plan["pre_speed_duration_sec"] == pytest.approx(12.0)
@@ -685,7 +685,7 @@ def test_audio_mix_plan_retime_keeps_audio_and_video_caps_independent(tmp_path: 
     assert report["audio_speed_capped"] is True
     assert report["source_window_audio_speed_capped"] is True
     assert report["video_speed_capped"] is False
-    assert report["unresolved_retime_overflow_sec"] == pytest.approx(1.798)
+    assert report["total_duration_overflow_sec"] == pytest.approx(1.798)
 
 
 def test_audio_mix_plan_retime_tier2_resolves_after_tier1_overflow(tmp_path: Path) -> None:
@@ -732,7 +732,7 @@ def test_audio_mix_plan_retime_tier2_resolves_after_tier1_overflow(tmp_path: Pat
     assert report["applied_source_window_stretch"] == pytest.approx(1.114)
     assert report["applied_audio_speed"] == pytest.approx(1.14)
     assert report["max_clip_overflow_after_speed_sec"] == pytest.approx(0.0)
-    assert report["unresolved_retime_overflow_sec"] == pytest.approx(0.0)
+    assert report["total_duration_overflow_sec"] == pytest.approx(0.0)
 
 
 def test_audio_mix_plan_last_source_window_uses_trailing_silence(tmp_path: Path) -> None:
@@ -776,7 +776,7 @@ def test_audio_mix_plan_last_source_window_uses_trailing_silence(tmp_path: Path)
     assert report["requested_source_window_stretch"] == pytest.approx(1.0)
     assert report["applied_source_window_stretch"] == pytest.approx(1.0)
     assert report["applied_audio_speed"] == pytest.approx(1.0)
-    assert report["unresolved_retime_overflow_sec"] == 0.0
+    assert report["total_duration_overflow_sec"] == 0.0
     assert report["final_video_speed"] == pytest.approx(1.0)
 
     plan = json.loads(Path(result.outputs["audio_mix_plan"]).read_text(encoding="utf-8"))

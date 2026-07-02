@@ -468,8 +468,8 @@ def _config_int(config: dict[str, Any], key: str, default: int) -> int:
 
 def _clean_tts_text(text: str) -> str:
     text = re.sub(r"\([^)]*\)", "", str(text)).strip()
-    text = re.sub(r"锛圼^锛塢*锛?", "", text).strip()
-    return text.replace("-", "")
+    text = re.sub(r"(?<![A-Za-z0-9])-|-(?![A-Za-z0-9])", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _first_existing_path(*values: Any) -> Path | None:

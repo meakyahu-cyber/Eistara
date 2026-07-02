@@ -49,6 +49,18 @@ The installer will:
 
 It will not install FFmpeg, CUDA Toolkit, CUDNN, IndexTTS, or any TTS model.
 
+## Default Runtime Policy
+
+`config.example.yaml` is the template copied to `config.local.yaml`. The
+release default enables the source-window dubbing timeline, including previous
+gap borrowing and per-clip audio speed fitting. The second retime tier remains
+disabled by default.
+
+Large cross-stage handoff data is stored under `output/internal`, while
+`state.json` keeps compact counts and JSON paths. This is expected: later
+stages recover TTS input from `output/internal/tts_segments.json` when inline
+arrays are omitted from job state.
+
 ## Useful Options
 
 ```powershell

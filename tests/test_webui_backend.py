@@ -68,11 +68,13 @@ def test_webui_backend_marks_machine_json_outputs_internal(tmp_path: Path) -> No
     (output_dir / "src.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nhello\n", encoding="utf-8")
     (internal_dir / "translations.json").write_text('{"translations":[]}', encoding="utf-8")
     (internal_dir / "subtitle_rows.json").write_text('{"rows":[]}', encoding="utf-8")
+    (internal_dir / "tts_segments.json").write_text('{"segments":[]}', encoding="utf-8")
     state = json.loads((job_dir / STATE_FILE).read_text(encoding="utf-8"))
     state["artifacts"] = {
         "source_srt": str(output_dir / "src.srt"),
         "translations_json": str(internal_dir / "translations.json"),
         "subtitle_rows_json": str(internal_dir / "subtitle_rows.json"),
+        "tts_segments_json": str(internal_dir / "tts_segments.json"),
     }
     (job_dir / STATE_FILE).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     backend = WebUiBackend(WebUiSettings(jobs_dir))
@@ -83,6 +85,7 @@ def test_webui_backend_marks_machine_json_outputs_internal(tmp_path: Path) -> No
     assert kinds["source_subtitle"] == "subtitle"
     assert kinds["translations"] == "internal"
     assert kinds["subtitle_rows"] == "internal"
+    assert kinds["tts_segments"] == "internal"
 
 
 def test_webui_dashboard_exposes_short_redacted_error_summary(tmp_path: Path) -> None:

@@ -158,7 +158,6 @@ DEFAULT_CONFIG: dict = {
         "max_mel_tokens": 1815,
         "timeout_sec": 300,
         "duration_control": {
-            "enabled": False,
             "adaptive_source_window_retry": {
                 "enabled": True,
                 "target_scale": 1.0,

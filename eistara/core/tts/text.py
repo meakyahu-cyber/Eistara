@@ -18,6 +18,9 @@ LATIN_SPECIAL_FOLD = {
 }
 
 
+TTS_SYMBOL_DROP = ("\u00ae", "\u2122", "\u00a9")
+
+
 def fold_latin_diacritics(text: str) -> str:
     out: list[str] = []
     for ch in str(text):
@@ -37,7 +40,7 @@ def fold_latin_diacritics(text: str) -> str:
 
 def clean_text_for_tts(text: str) -> str:
     cleaned = str(text)
-    for char in ("&", "®", "™", "©"):
+    for char in TTS_SYMBOL_DROP:
         cleaned = cleaned.replace(char, "")
     return fold_latin_diacritics(cleaned).strip()
 
