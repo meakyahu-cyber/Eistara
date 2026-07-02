@@ -7,6 +7,7 @@ from .events import JobEvent
 
 
 EVENTS_FILE = "events.jsonl"
+ARCHIVE_WORK_DIR = "work"
 
 
 class JsonlEventStore:
@@ -27,11 +28,14 @@ class JsonlEventStore:
         events: list[JobEvent] = []
         if not self.jobs_dir.exists():
             return events
-        for path in sorted(self.jobs_dir.glob(f"*/{EVENTS_FILE}")):
+        pattern = f"*/{ARCHIVE_WORK_DIR}/{EVENTS_FILE}" if self.jobs_dir.name == "history" else f"*/{EVENTS_FILE}"
+        for path in sorted(self.jobs_dir.glob(pattern)):
             events.extend(self._read_path(path))
         return sorted(events, key=lambda event: event.created_at)
 
     def job_events_path(self, job_id: str) -> Path:
+        if self.jobs_dir.name == "history":
+            return self.jobs_dir / job_id / ARCHIVE_WORK_DIR / EVENTS_FILE
         return self.jobs_dir / job_id / EVENTS_FILE
 
     def _read_path(self, path: Path) -> list[JobEvent]:

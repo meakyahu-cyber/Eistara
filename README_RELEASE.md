@@ -61,6 +61,10 @@ Large cross-stage handoff data is stored under `output/internal`, while
 stages recover TTS input from `output/internal/tts_segments.json` when inline
 arrays are omitted from job state.
 
+Active jobs live under `jobs`. Archived jobs live under `history/<video title>`;
+the archive root contains user-facing deliverables, while `work` keeps the full
+recoverable job tree.
+
 ## Useful Options
 
 ```powershell

@@ -6,6 +6,8 @@ from typing import Any
 
 from eistara.core.asr import AsrProviderError, AsrRequest, AsrResult, AsrSegment, AsrSettings
 
+from .model_cache import resolve_faster_whisper_model
+
 
 @dataclass(slots=True)
 class WhisperAsrProvider:
@@ -51,6 +53,7 @@ class FasterWhisperAsrProvider:
         ).strip()
         if download_root:
             model_kwargs["download_root"] = str(Path(download_root).expanduser())
+            model_name = resolve_faster_whisper_model(model_name, model_kwargs["download_root"])
         if _as_bool(settings.provider_config.get("local_files_only"), False):
             model_kwargs["local_files_only"] = True
         model = WhisperModel(model_name, device=device, compute_type=compute_type, **model_kwargs)

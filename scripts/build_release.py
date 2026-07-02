@@ -16,7 +16,6 @@ DEFAULT_RELEASE_ROOT = ROOT.parent / "Eistara_V2_releases"
 EXCLUDED_DIRS = {
     ".git",
     ".venv",
-    ".pytest_cache",
     ".research_github",
     "__pycache__",
     "_downloads",
@@ -27,7 +26,6 @@ EXCLUDED_DIRS = {
     "logs",
     "models",
     "output",
-    "tests",
     "work",
 }
 EXCLUDED_FILES = {

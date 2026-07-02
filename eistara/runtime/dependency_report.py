@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from eistara.adapters.asr.model_cache import faster_whisper_cache_path, has_faster_whisper_weights
 from eistara.config import AppConfig
 from eistara.core.subtitle.nlp_split import DEFAULT_SPACY_MODEL_MAP
 
@@ -156,7 +157,7 @@ def _asr_items(config: AppConfig, project_root: Path) -> list[ModelDependencyIte
     if provider in {"whisperx", "local", "whisperx-local"}:
         whisperx_version = _package_version("whisperx")
         faster_version = _package_version("faster-whisper")
-        model_ok = _has_faster_whisper_weights(model_path)
+        model_ok = has_faster_whisper_weights(model_path)
         items.append(
             ModelDependencyItem(
                 component="asr",
@@ -310,17 +311,6 @@ def _alignment_item(config: AppConfig) -> ModelDependencyItem:
     )
 
 
-def _faster_whisper_cache_path(model: str, model_dir: Path) -> Path:
-    candidate = Path(model).expanduser()
-    if candidate.is_absolute() or candidate.exists():
-        return candidate
-    local_candidate = model_dir / model
-    if local_candidate.exists():
-        return local_candidate
-    repo_id = model if "/" in model else f"Systran/faster-whisper-{model}"
-    return model_dir / ("models--" + repo_id.replace("/", "--"))
-
-
 def _selected_local_asr_model(config: AppConfig, project_root: Path) -> tuple[str, Path]:
     model_dir = _resolve_project_path(config.runtime.model_dir, project_root)
     language = str(config.asr.language or "").strip().lower()
@@ -330,17 +320,9 @@ def _selected_local_asr_model(config: AppConfig, project_root: Path) -> tuple[st
         if local_path.exists():
             return local_name, local_path
         repo_id = "Huan69/Belle-whisper-large-v3-zh-punct-fasterwhisper"
-        return repo_id, _faster_whisper_cache_path(repo_id, model_dir)
+        return repo_id, faster_whisper_cache_path(repo_id, model_dir)
     model = str(config.asr.model or "large-v3").strip()
-    return model, _faster_whisper_cache_path(model, model_dir)
-
-
-def _has_faster_whisper_weights(path: Path) -> bool:
-    if path.is_file():
-        return path.name in {"model.bin", "model.safetensors"}
-    if not path.exists():
-        return False
-    return any(path.glob("**/model.bin")) or any(path.glob("**/model.safetensors"))
+    return model, faster_whisper_cache_path(model, model_dir)
 
 
 def _demucs_cache_files() -> list[Path]:

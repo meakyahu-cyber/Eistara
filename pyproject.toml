@@ -21,9 +21,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-]
 webui = [
     "streamlit>=1.36.0",
     "Pillow>=10.0.0",
@@ -34,9 +31,6 @@ asr = [
     "librosa>=0.11.0",
     "whisperx==3.8.6",
 ]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 include = ["eistara*", "apps*"]

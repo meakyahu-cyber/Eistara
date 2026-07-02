@@ -105,8 +105,17 @@ python -m apps.cli.main render compose .\work\source_video.mp4 .\work\demo_outpu
 python -m apps.cli.main quality check --translations-json .\work\demo_output\internal\translations.json --subtitle-rows-json .\work\demo_output\internal\subtitle_rows.json --dub-segments-json .\work\demo_output\internal\dub_segments.json
 ```
 
-The runtime CLI now exposes the production pipeline only; lightweight scheduler
-tests use test-local runners instead of public no-op presets.
+The runtime CLI now exposes the production pipeline only.
+
+## Job Directories
+
+Active jobs live under `jobs/<job_id>`. Each active job owns its working output
+under `jobs/<job_id>/output`.
+
+Completed jobs are archived under `history/<video title>`. The archive root is
+for user-facing deliverables such as the source video, dubbed video, and
+subtitle files. The full recoverable working tree is kept under
+`history/<video title>/work`.
 
 ## Local Diagnostics
 

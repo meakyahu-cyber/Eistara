@@ -90,6 +90,15 @@ INLINE_HEAVY_ARTIFACT_KEYS = {
 }
 
 MAX_INLINE_ARTIFACT_JSON_CHARS = 4000
+ARCHIVE_WORK_DIR = "work"
+ARCHIVE_DELIVERY_ARTIFACT_KEYS = (
+    "source_video",
+    "source_srt",
+    "translated_srt",
+    "dub_subtitles",
+    "dub_bilingual_subtitles",
+    "dub_video",
+)
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -179,12 +188,12 @@ class JsonJobStore:
         if not self.jobs_dir.exists():
             return []
         jobs: list[Job] = []
-        for job_dir in sorted(path for path in self.jobs_dir.iterdir() if (path / TASK_FILE).exists()):
+        for job_dir in sorted(path for path in self.jobs_dir.iterdir() if self._job_data_dir(path).joinpath(TASK_FILE).exists()):
             jobs.append(self.load(job_dir.name))
         return jobs
 
     def load(self, job_id: str) -> Job:
-        job_dir = self.jobs_dir / job_id
+        job_dir = self._job_data_dir(self.jobs_dir / job_id)
         return self.load_from_dir(job_dir, job_id=job_id)
 
     def load_from_dir(self, job_dir: str | os.PathLike[str], *, job_id: str | None = None) -> Job:
@@ -201,7 +210,7 @@ class JsonJobStore:
 
     def save_state(self, job_id: str, state: JobState) -> None:
         state.updated_at = utc_now_iso()
-        _write_json_atomic(self.jobs_dir / job_id / STATE_FILE, _state_to_persisted_dict(state))
+        _write_json_atomic(self._job_data_dir(self.jobs_dir / job_id) / STATE_FILE, _state_to_persisted_dict(state))
 
     def next_stage(self, state: JobState) -> StageName | None:
         completed = set(state.completed_stages)
@@ -258,17 +267,25 @@ class JsonJobStore:
         history_root.mkdir(parents=True, exist_ok=True)
         archive_name = _archive_name_for_job(job)
         target = _unique_archive_path(history_root / archive_name)
+        work_dir = target / ARCHIVE_WORK_DIR
         old_root = source.resolve()
-        shutil.move(os.fspath(source), os.fspath(target))
+        target.mkdir(parents=True, exist_ok=False)
+        shutil.move(os.fspath(source), os.fspath(work_dir))
         self._rewrite_job_files_after_rename(
-            target.resolve(),
+            work_dir.resolve(),
             old_root,
-            target.resolve(),
+            work_dir.resolve(),
             old_job_id=job_id,
             new_job_id=target.name,
         )
-        _remove_redundant_archive_json(target)
+        _promote_archive_delivery_files(work_dir.resolve(), target.resolve())
+        _remove_redundant_archive_json(work_dir)
         return target
+
+    def _job_data_dir(self, job_dir: Path) -> Path:
+        if self.jobs_dir.name == "history":
+            return job_dir / ARCHIVE_WORK_DIR
+        return job_dir
 
     def rename(self, job_id: str, desired_name: str) -> Job:
         source = self.jobs_dir / job_id
@@ -481,6 +498,53 @@ def _rewrite_json_files_after_rename(
                 rewritten["task_id"] = new_job_id
         if rewritten != data:
             _write_json_atomic(path, rewritten)
+
+
+def _promote_archive_delivery_files(work_dir: Path, archive_root: Path) -> None:
+    state_path = work_dir / STATE_FILE
+    state = _read_json(state_path, {})
+    if not isinstance(state, dict):
+        return
+    artifacts = state.get("artifacts")
+    if not isinstance(artifacts, dict):
+        return
+
+    promoted: dict[str, str] = {}
+    for key in ARCHIVE_DELIVERY_ARTIFACT_KEYS:
+        source_path = _archive_delivery_source_path(artifacts.get(key), work_dir)
+        if source_path is None:
+            continue
+        destination = _unique_archive_file_path(archive_root / source_path.name)
+        shutil.copy2(source_path, destination)
+        promoted[key] = str(destination)
+    if not promoted:
+        return
+    artifacts.update(promoted)
+    _write_json_atomic(state_path, state)
+
+
+def _archive_delivery_source_path(value: Any, work_dir: Path) -> Path | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    path = Path(value)
+    candidates = [path] if path.is_absolute() else [work_dir / path, work_dir / "output" / path.name]
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
+def _unique_archive_file_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    stem = path.stem
+    suffix = path.suffix
+    index = 2
+    while True:
+        candidate = path.with_name(f"{stem}_{index}{suffix}")
+        if not candidate.exists():
+            return candidate
+        index += 1
 
 
 def _remove_redundant_archive_json(job_dir: Path) -> None:

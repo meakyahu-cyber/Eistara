@@ -656,11 +656,13 @@ class WebUiBackend:
             return JsonJobStore(self.jobs_dir).load(job_id)
         history_dir = history_dir_for_jobs(self.jobs_dir)
         archived_path = history_dir / job_id
-        if (archived_path / "task.json").exists():
+        if (archived_path / "work" / "task.json").exists():
             return JsonJobStore(history_dir).load(job_id)
         raise FileNotFoundError(f"Job not found: {job_id}")
 
     def _read_job_events(self, job: Job):
+        if job.job_dir.name == "work":
+            return JsonlEventStore(job.job_dir.parent.parent).read_job(job.job_id)
         return JsonlEventStore(job.job_dir.parent).read_job(job.job_id)
 
 
@@ -730,7 +732,6 @@ def _validate_cleanup_root(path: Path) -> None:
         PROJECT_ROOT / "apps",
         PROJECT_ROOT / "eistara",
         PROJECT_ROOT / "scripts",
-        PROJECT_ROOT / "tests",
         PROJECT_ROOT / "docs",
         PROJECT_ROOT / ".venv",
         PROJECT_ROOT / "_model_cache",
