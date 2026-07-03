@@ -14,7 +14,7 @@ IndexTTS 配音、字幕生成、音频混合和最终视频渲染。
 
 将 `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin` 加入系统 `Path`。
 
-FFmpeg 安装后，需保证已加入系统 `Path`。
+FFmpeg 推荐使用 `winget install --id Gyan.FFmpeg -e` 安装。安装后重新打开 PowerShell，运行 `ffmpeg -version` 能显示版本号即可；如果不能，再检查 FFmpeg 是否已加入系统 `Path`。
 
 ## 二、安装
 

@@ -11,7 +11,7 @@ Install [CUDA Toolkit 12.8](https://developer.download.nvidia.com/compute/cuda/1
 
 Add `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin` to the system `Path`.
 
-After installing FFmpeg, make sure FFmpeg is also available from the system `Path`.
+Recommended FFmpeg install: `winget install --id Gyan.FFmpeg -e`. Reopen PowerShell and confirm `ffmpeg -version` works; otherwise check that FFmpeg is available from the system `Path`.
 
 ## One-command Install
 
