@@ -64,11 +64,15 @@ def main() -> None:
         _subtitle_mode_placeholder(st, language)
         return
 
-    single_tab, batch_tab = st.tabs([ui_t(language, "single_video"), ui_t(language, "batch")])
+    single_tab, batch_tab, history_tab = st.tabs(
+        [ui_t(language, "single_video"), ui_t(language, "batch"), ui_t(language, "history")]
+    )
     with single_tab:
         _single_video_tab(st, backend, language, state["preset"])
     with batch_tab:
         _batch_tab(st, backend, language, state["preset"])
+    with history_tab:
+        _history_tab(st, backend, language)
 
 
 def _sidebar(st) -> dict[str, str]:
@@ -590,7 +594,7 @@ def _render_dependency_status(st, report: dict[str, Any]) -> None:
 
 def _single_video_tab(st, backend: WebUiBackend, language: str, preset: str) -> None:
     config = backend.config_dict()
-    job_id = backend.latest_job_id()
+    job_id = backend.latest_active_job_id()
     detail = backend.job_detail(job_id) if job_id else None
 
     source_col, flow_col = st.columns([1.05, 1], gap="large")
@@ -954,7 +958,7 @@ def _batch_tab(st, backend: WebUiBackend, language: str, preset: str) -> None:
         cols = st.columns(4)
         with cols[0]:
             if st.button(ui_t(language, "start_batch"), key="batch_start", use_container_width=True, disabled=bool(pid)):
-                if not backend.dashboard()["jobs"]:
+                if not backend.active_dashboard()["jobs"]:
                     st.error(ui_t(language, "create_jobs_first"))
                 else:
                     result = backend.start_scheduler(preset=preset)
@@ -991,7 +995,7 @@ def _batch_tab(st, backend: WebUiBackend, language: str, preset: str) -> None:
 
 
 def _render_batch_status(st, backend: WebUiBackend, language: str, preset: str) -> None:
-    dashboard = backend.dashboard()
+    dashboard = backend.active_dashboard()
     jobs = dashboard["jobs"]
     if not jobs:
         st.info(ui_t(language, "no_batch_jobs"))
@@ -1049,6 +1053,36 @@ def _render_batch_status(st, backend: WebUiBackend, language: str, preset: str) 
         with st.expander(ui_t(language, "job_messages"), expanded=True):
             for row in error_rows:
                 st.write(f"{row['job']}: {row['error']}")
+
+
+def _history_tab(st, backend: WebUiBackend, language: str) -> None:
+    _section_title(st, ui_t(language, "history"), ui_t(language, "history_caption"))
+    with st.container(border=True):
+        dashboard = backend.history_dashboard()
+        jobs = dashboard["jobs"]
+        if not jobs:
+            st.info(ui_t(language, "no_history_jobs"))
+            return
+
+        st.dataframe(
+            [
+                {
+                    ui_t(language, "history_job"): row["job"],
+                    ui_t(language, "status"): _display_status(row["status"], language),
+                    ui_t(language, "updated"): row["updated"],
+                    ui_t(language, "title_or_source"): row["source"],
+                }
+                for row in jobs
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        with st.expander(ui_t(language, "history_outputs"), expanded=True):
+            for row in jobs:
+                detail = backend.job_detail(row["job"])
+                st.markdown(f"**{html.escape(row['job'])}**")
+                _render_outputs(st, detail["outputs"], language, kinds={"video", "audio", "subtitle"}, title=None)
 
 
 def _resource_lane_panel(st, rows: list[dict[str, Any]], language: str) -> None:
