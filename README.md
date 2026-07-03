@@ -15,35 +15,24 @@ For normal local dubbing, Eistara expects a Windows NVIDIA GPU environment.
 CPU mode exists for limited debugging, but it is not the recommended release
 runtime.
 
-Install these host dependencies before running `setup_env.py`:
+Install these host dependencies first. Keep the default install paths unless
+you already know you need a custom layout:
 
 - Python 3.10.x
-- FFmpeg. `choco install ffmpeg` usually makes `ffmpeg.exe` and
-  `ffprobe.exe` available automatically; manual zip installs must add the
-  FFmpeg `bin` directory to `Path`.
 - NVIDIA Driver
 - [CUDA Toolkit 12.8](https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_571.96_windows.exe)
 - [CUDNN 9.11.0](https://developer.download.nvidia.com/compute/cudnn/9.11.0/local_installers/cudnn_9.11.0_windows.exe)
+- FFmpeg
 - IndexTTS service started separately, default API URL:
   `http://127.0.0.1:8010/tts`
 
-The CUDA Toolkit installer normally creates `CUDA_PATH` and `CUDA_PATH_V12_8`
-itself. In Windows "Edit the system environment variables" > "Environment
-Variables", just confirm they point to
-`C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8`.
+Recommended FFmpeg install:
 
-Then make sure system `Path` contains these two GPU runtime folders:
-
-```text
-C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin
-C:\Program Files\NVIDIA\CUDNN\v9.11\bin\12.9
+```powershell
+choco install ffmpeg
 ```
 
-If your CUDNN path is different, run `where cudnn64_9.dll` and add the folder
-shown by that command to `Path`. If FFmpeg was installed manually from a zip,
-also add its `bin` directory, for example `C:\ffmpeg\bin`.
-
-Check the host environment in a new PowerShell window:
+After installing, close old terminals, open a new PowerShell window, and run:
 
 ```powershell
 python --version
@@ -53,6 +42,23 @@ nvidia-smi
 nvcc --version
 where cudnn64_9.dll
 ```
+
+If those commands print versions or a CUDNN path, continue to `python
+setup_env.py`.
+
+Only troubleshoot `Path` if one of the checks fails:
+
+- If `nvcc --version` fails, reopen PowerShell or reinstall CUDA Toolkit 12.8.
+  If it still fails, add `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin`
+  to system `Path`.
+- If `where cudnn64_9.dll` fails, add the CUDNN `bin` folder to system `Path`.
+  With the default CUDNN installer, this is usually
+  `C:\Program Files\NVIDIA\CUDNN\v9.11\bin\12.9`.
+- If `ffmpeg -version` fails after a manual FFmpeg zip install, add that
+  FFmpeg `bin` folder to system `Path`.
+
+You normally do not need to edit `CUDA_PATH`; the CUDA Toolkit installer writes
+it automatically.
 
 Eistara's installer creates `.venv`, installs Python dependencies, prepares the
 non-TTS model cache, and creates `config.local.yaml` from

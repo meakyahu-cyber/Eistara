@@ -13,37 +13,23 @@ IndexTTS 配音、字幕生成、音频混合和最终视频渲染。
 正常本地配音建议按 Windows + NVIDIA GPU 环境准备。CPU 模式只适合有限调试，
 不是推荐的发包运行方式。
 
-运行 `setup_env.py` 前，先安装这些宿主机依赖：
+运行 `setup_env.py` 前，先安装这些宿主机依赖。普通用户保持默认安装路径即可：
 
 - Python 3.10.x
-- FFmpeg。使用 `choco install ffmpeg` 时通常会自动让 `ffmpeg.exe` 和
-  `ffprobe.exe` 可用；手动解压安装 FFmpeg 时，才需要把 FFmpeg 的 `bin`
-  目录加入 `Path`。
 - NVIDIA Driver
 - [CUDA Toolkit 12.8](https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_571.96_windows.exe)
 - [CUDNN 9.11.0](https://developer.download.nvidia.com/compute/cudnn/9.11.0/local_installers/cudnn_9.11.0_windows.exe)
+- FFmpeg
 - IndexTTS 服务需要单独启动，默认 API 地址：
   `http://127.0.0.1:8010/tts`
 
-CUDA Toolkit 安装器通常会自动写入 `CUDA_PATH` 和 `CUDA_PATH_V12_8`。在
-Windows 开始菜单搜索“编辑系统环境变量”，打开“环境变量”，只需要确认它们指向：
+推荐用 Chocolatey 安装 FFmpeg：
 
-```text
-C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8
+```powershell
+choco install ffmpeg
 ```
 
-然后确认系统 `Path` 里有这两个 GPU 运行时目录：
-
-```text
-C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin
-C:\Program Files\NVIDIA\CUDNN\v9.11\bin\12.9
-```
-
-如果你的 CUDNN 实际路径不同，先运行 `where cudnn64_9.dll`，然后把这条命令
-显示出来的文件夹加入 `Path`。如果 FFmpeg 是手动解压安装，再额外把 FFmpeg
-的 `bin` 目录加入 `Path`，例如 `C:\ffmpeg\bin`。
-
-打开新的 PowerShell，检查环境是否生效：
+安装完成后，关闭旧 PowerShell，重新打开一个 PowerShell，运行：
 
 ```powershell
 python --version
@@ -53,6 +39,21 @@ nvidia-smi
 nvcc --version
 where cudnn64_9.dll
 ```
+
+这些命令能显示版本号或 CUDNN 路径，就可以继续运行 `python setup_env.py`。
+
+只有检查失败时，才需要处理 `Path`：
+
+- 如果 `nvcc --version` 失败，先重新打开 PowerShell，或者重装 CUDA Toolkit
+  12.8。仍然失败时，再把
+  `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin` 加入系统
+  `Path`。
+- 如果 `where cudnn64_9.dll` 失败，把 CUDNN 的 `bin` 目录加入系统 `Path`。
+  默认安装时通常是 `C:\Program Files\NVIDIA\CUDNN\v9.11\bin\12.9`。
+- 如果手动解压安装 FFmpeg 后 `ffmpeg -version` 失败，把 FFmpeg 的 `bin`
+  目录加入系统 `Path`。
+
+通常不需要手动修改 `CUDA_PATH`；CUDA Toolkit 安装器会自动写好。
 
 Eistara 安装脚本会创建 `.venv`、安装 Python 依赖、准备非 TTS 模型缓存，
 并从 `config.example.yaml` 创建 `config.local.yaml`。它不负责安装 FFmpeg、

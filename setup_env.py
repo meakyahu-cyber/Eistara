@@ -288,6 +288,32 @@ def check_host_runtime() -> None:
         print("NVIDIA driver: detected")
     else:
         print("NVIDIA driver: not detected. GPU acceleration may be unavailable; CPU mode can still be used.")
+    if shutil.which("nvcc"):
+        print("CUDA Toolkit: detected")
+    else:
+        print(
+            "WARNING: CUDA Toolkit nvcc not found. "
+            "Install CUDA Toolkit 12.8 with default settings, then open a new PowerShell."
+        )
+    cudnn_path = find_file_on_path("cudnn64_9.dll")
+    if cudnn_path:
+        print(f"CUDNN: detected ({cudnn_path.parent})")
+    else:
+        print(
+            "WARNING: CUDNN cudnn64_9.dll not found. "
+            "Install CUDNN 9.11.0 with default settings, then open a new PowerShell."
+        )
+
+
+def find_file_on_path(filename: str) -> Path | None:
+    for raw_entry in os.environ.get("PATH", "").split(os.pathsep):
+        entry = raw_entry.strip().strip('"')
+        if not entry:
+            continue
+        candidate = Path(entry) / filename
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def run_health_summary() -> None:
@@ -335,7 +361,7 @@ def run_pip(pip_args: list[str], args: argparse.Namespace, *, allow_official_fal
 
 def run(cmd: list[str], extra_args: list[str], *, env: dict[str, str] | None = None, check: bool = True) -> int:
     full_cmd = [*cmd, *extra_args]
-    print("+ " + " ".join(quote(part) for part in full_cmd))
+    print("+ " + " ".join(quote(part) for part in full_cmd), flush=True)
     proc = subprocess.run(full_cmd, cwd=str(ROOT), env=env)
     if check and proc.returncode != 0:
         raise SystemExit(proc.returncode)
