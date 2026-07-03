@@ -11,59 +11,11 @@ Release-package install guide: [README_RELEASE.md](README_RELEASE.md)
 
 ## Runtime Requirements
 
-For normal local dubbing, Eistara expects a Windows NVIDIA GPU environment.
-CPU mode exists for limited debugging, but it is not the recommended release
-runtime.
+Install [CUDA Toolkit 12.8](https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_571.96_windows.exe), [CUDNN 9.11.0](https://developer.download.nvidia.com/compute/cudnn/9.11.0/local_installers/cudnn_9.11.0_windows.exe), and FFmpeg.
 
-Install these host dependencies first. Keep the default install paths unless
-you already know you need a custom layout:
+Add `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin` to the system `Path`.
 
-- Python 3.10.x
-- NVIDIA Driver
-- [CUDA Toolkit 12.8](https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_571.96_windows.exe)
-- [CUDNN 9.11.0](https://developer.download.nvidia.com/compute/cudnn/9.11.0/local_installers/cudnn_9.11.0_windows.exe)
-- FFmpeg
-- IndexTTS service started separately, default API URL:
-  `http://127.0.0.1:8010/tts`
-
-Recommended FFmpeg install:
-
-```powershell
-choco install ffmpeg
-```
-
-After installing, close old terminals, open a new PowerShell window, and run:
-
-```powershell
-python --version
-ffmpeg -version
-ffprobe -version
-nvidia-smi
-nvcc --version
-where cudnn64_9.dll
-```
-
-If those commands print versions or a CUDNN path, continue to `python
-setup_env.py`.
-
-Only troubleshoot `Path` if one of the checks fails:
-
-- If `nvcc --version` fails, reopen PowerShell or reinstall CUDA Toolkit 12.8.
-  If it still fails, add `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin`
-  to system `Path`.
-- If `where cudnn64_9.dll` fails, add the CUDNN `bin` folder to system `Path`.
-  With the default CUDNN installer, this is usually
-  `C:\Program Files\NVIDIA\CUDNN\v9.11\bin\12.9`.
-- If `ffmpeg -version` fails after a manual FFmpeg zip install, add that
-  FFmpeg `bin` folder to system `Path`.
-
-You normally do not need to edit `CUDA_PATH`; the CUDA Toolkit installer writes
-it automatically.
-
-Eistara's installer creates `.venv`, installs Python dependencies, prepares the
-non-TTS model cache, and creates `config.local.yaml` from
-`config.example.yaml`. It does not install FFmpeg, NVIDIA Driver, CUDA Toolkit,
-CUDNN, IndexTTS, or TTS model files.
+After installing FFmpeg, make sure FFmpeg is also available from the system `Path`.
 
 ## Install
 
@@ -72,19 +24,6 @@ git clone https://github.com/meakyahu-cyber/Eistara.git
 cd Eistara
 python setup_env.py
 ```
-
-Useful installer options:
-
-```powershell
-python setup_env.py --skip-models
-python setup_env.py --torch cpu
-python setup_env.py --torch cu128
-python setup_env.py --with-zh-asr
-python setup_env.py --no-china-mirror
-```
-
-By default, pip uses the Tsinghua PyPI mirror, HuggingFace downloads use
-`hf-mirror.com`, and PyTorch wheels use the official PyTorch wheel index.
 
 ## Start
 
