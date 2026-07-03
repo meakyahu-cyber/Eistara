@@ -38,7 +38,6 @@ EXCLUDED_ANY_DIRS = {
 EXCLUDED_FILES = {
     ".gitattributes",
     ".gitignore",
-    "README.md",
     "config.local.yaml",
     ".env",
 }

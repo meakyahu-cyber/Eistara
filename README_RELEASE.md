@@ -52,9 +52,10 @@ It will not install FFmpeg, CUDA Toolkit, CUDNN, IndexTTS, or any TTS model.
 ## Default Runtime Policy
 
 `config.example.yaml` is the template copied to `config.local.yaml`. The
-release default enables the source-window dubbing timeline, including previous
-gap borrowing and per-clip audio speed fitting. The second retime tier remains
-disabled by default.
+release default enables the source-window dubbing timeline, including gap
+borrowing, local audio speed fitting, and IndexTTS adaptive source-window
+duration-control retry for clips that still need help before final mixing. The
+second retime tier remains disabled by default.
 
 Large cross-stage handoff data is stored under `output/internal`, while
 `state.json` keeps compact counts and JSON paths. This is expected: later

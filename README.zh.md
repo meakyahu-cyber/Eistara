@@ -1,62 +1,46 @@
 # Eistara
 
-Eistara 是一个视频翻译与中文配音工作流，包含视频下载、转录、翻译、原声分离、TTS 调用、混音、字幕和最终视频输出。Eistara 本体只维护工作流和 Python 运行环境，不接管宿主机的 FFmpeg、CUDA、CUDNN，也不内置 TTS 服务。
+Eistara 是一个偏 Windows 本地运行的视频翻译与中文配音工作流。它通过
+WebUI 和 CLI 串起视频获取、ASR 转录、LLM 翻译、Demucs 人声分离、
+IndexTTS 配音、字幕生成、音频混合和最终视频渲染。
 
-## 安装前准备
+英文说明：[README.md](README.md)
 
-在 Windows 上使用本地 GPU 加速前，建议先完成宿主机依赖安装：
+发包版安装说明：[README_RELEASE.md](README_RELEASE.md)
 
-1. 安装 Python 3.10；如果系统没有 Python 3.10，`setup_env.py` 会尝试通过 uv 自动拉取 Python 3.10 创建 `.venv`。
-2. 安装 FFmpeg，并确保 `ffmpeg` 和 `ffprobe` 可在命令行直接运行。
-3. 安装 NVIDIA Driver。
-4. 如本机 GPU 生态需要，安装 [CUDA Toolkit 12.6](https://developer.download.nvidia.com/compute/cuda/12.6.0/local_installers/cuda_12.6.0_560.76_windows.exe)。
-5. 如本机 GPU 生态需要，安装 [CUDNN 9.3.0](https://developer.download.nvidia.com/compute/cudnn/9.3.0/local_installers/cudnn_9.3.0_windows.exe)。
-6. 单独部署并启动 IndexTTS 服务。
+## 运行环境
 
-FFmpeg 可以通过包管理器安装：
+- Python 3.10.x
+- FFmpeg 和 FFprobe，并且能在命令行直接运行
+- 使用 GPU 加速时需要 NVIDIA Driver
+- CUDA Toolkit / CUDNN 只在本机 GPU 环境明确需要时安装
+- IndexTTS 服务需要单独启动，默认 API 地址：
+  `http://127.0.0.1:8010/tts`
 
-```powershell
-choco install ffmpeg
-```
+Eistara 安装脚本会创建 `.venv`、安装 Python 依赖、准备非 TTS 模型缓存，
+并从 `config.example.yaml` 创建 `config.local.yaml`。它不负责安装 FFmpeg、
+CUDA Toolkit、CUDNN、IndexTTS，也不负责下载或管理 TTS 模型。
 
-如果不用 Chocolatey，也可以自行下载安装 FFmpeg，并把 `bin` 目录加入系统 `PATH`。
-
-## 安装 Eistara
-
-克隆仓库：
+## 安装
 
 ```powershell
 git clone https://github.com/meakyahu-cyber/Eistara.git
 cd Eistara
-```
-
-创建虚拟环境并安装依赖：
-
-```powershell
 python setup_env.py
 ```
 
-如果只想先验证依赖安装，不下载模型：
+常用安装选项：
 
 ```powershell
 python setup_env.py --skip-models
-```
-
-如果明确使用 CUDA 12.8 PyTorch wheel：
-
-```powershell
+python setup_env.py --torch cpu
 python setup_env.py --torch cu128
+python setup_env.py --with-zh-asr
+python setup_env.py --no-china-mirror
 ```
 
-## 模型缓存
-
-默认模型：
-
-- ASR：`Systran/faster-whisper-large-v3`
-- 中文 ASR 可选：`Huan69/Belle-whisper-large-v3-zh-punct-fasterwhisper`
-- 人声分离默认：Demucs `htdemucs`
-
-默认使用 `hf-mirror.com` 和清华 PyPI 源以改善国内下载体验。TTS 模型不由 Eistara 下载或管理。
+默认情况下，pip 使用清华 PyPI 镜像，HuggingFace 下载使用 `hf-mirror.com`，
+PyTorch wheel 仍使用官方 PyTorch wheel 源。
 
 ## 启动
 
@@ -70,22 +54,62 @@ WebUI 默认地址：
 http://localhost:10127
 ```
 
-在 WebUI 中填写 LLM `base_url`、`key` 和 `model`。这些设置会写入本地 `config.local.yaml`，该文件不会提交到 Git。
+在 WebUI 中填写 LLM `base_url`、`key` 和 `model`。这些设置会写入本地
+`config.local.yaml`，该文件不会提交到 Git。
 
-## 边界说明
+## 默认运行策略
 
-Eistara 安装器负责：
+`config.example.yaml` 是复制到 `config.local.yaml` 的配置模板。
 
-- 创建 `.venv`
-- 安装 Python 包
-- 准备非 TTS 模型缓存
-- 创建本地配置模板
-- 检测宿主机 FFmpeg / NVIDIA Driver
+- 翻译批次默认每批 20 条。
+- ASR 默认使用 `Systran/faster-whisper-large-v3`。
+- 可选中文 ASR 缓存：`Huan69/Belle-whisper-large-v3-zh-punct-fasterwhisper`。
+- 人声分离使用 Demucs `htdemucs`。
+- 配音时间线默认使用 `source_window`。
+- source-window retime 默认启用借窗和局部音频加速。
+- IndexTTS 自适应 source-window duration-control retry 默认开启，只对仍然
+  需要兜底的片段生效。
+- 二档 retime 默认关闭。
+- 背景音默认使用自适应宽频 ducking。
 
-Eistara 安装器不负责：
+## 任务目录
 
-- 安装 FFmpeg
-- 安装 CUDA Toolkit
-- 安装 CUDNN
-- 安装或启动 IndexTTS
-- 下载 TTS 模型
+进行中的任务放在 `jobs/<job_id>`。
+
+完成后的任务归档到 `history/<视频标题>`。归档根目录放用户真正需要的交付物，
+例如源视频、配音视频和各式字幕；完整可恢复的工作树放在
+`history/<视频标题>/work`。
+
+较大的跨阶段交接数据会放在 `output/internal`，`state.json` 只保留计数和
+JSON 路径。例如后续阶段可以从 `output/internal/tts_segments.json` 恢复
+TTS 输入，即使持久化的 job state 里没有内联大数组。
+
+## CLI 检查
+
+日常使用以 WebUI 为主；CLI 主要用于健康检查和调试：
+
+```powershell
+python -m apps.cli.main --jobs-dir .\jobs health
+python -m apps.cli.main --jobs-dir .\jobs status
+python -m apps.cli.main --jobs-dir .\jobs events
+python -m apps.cli.main --jobs-dir .\jobs stages
+python -m apps.cli.main --config .\config.local.yaml --jobs-dir .\jobs run-once --preset production
+```
+
+## 代码结构
+
+- `apps.webui`：Streamlit 运行界面。
+- `apps.cli`：健康检查、调度器、交付物和调试 CLI。
+- `eistara.runtime`：生产流水线装配和运行时健康检查。
+- `eistara.config`：默认配置、配置加载和类型化设置构建。
+- `eistara.core.jobs`：任务状态、JSON 任务存储和归档。
+- `eistara.core.scheduler`：阶段调度、锁、心跳和恢复。
+- `eistara.core.source`：本地文件和 URL 源获取。
+- `eistara.core.asr`：ASR 请求/结果模型和转录阶段。
+- `eistara.core.translation`：分批、提示词、校验和发布。
+- `eistara.core.tts`：TTS 请求模型、缓存、重试服务和文本清洗。
+- `eistara.core.timeline`：source-window 时间线准备。
+- `eistara.core.dubbing`：音频放置、retime、混音和渲染流程。
+- `eistara.core.delivery`：面向用户的视频和字幕交付物。
+- `eistara.adapters`：ASR、TTS、LLM、媒体和源获取适配器边界。
+- `eistara.core.diagnostics`：可选本地诊断 hook，默认关闭，不参与核心流程行为。
