@@ -39,9 +39,9 @@ C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin
 C:\Program Files\NVIDIA\CUDNN\v9.11\bin\12.9
 ```
 
-If CUDNN is installed to a different CUDA subfolder, add the folder that
-contains `cudnn64_9.dll`. If FFmpeg was installed manually from a zip, also add
-its `bin` directory, for example `C:\ffmpeg\bin`.
+If your CUDNN path is different, run `where cudnn64_9.dll` and add the folder
+shown by that command to `Path`. If FFmpeg was installed manually from a zip,
+also add its `bin` directory, for example `C:\ffmpeg\bin`.
 
 Check the host environment in a new PowerShell window:
 

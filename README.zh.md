@@ -39,9 +39,9 @@ C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin
 C:\Program Files\NVIDIA\CUDNN\v9.11\bin\12.9
 ```
 
-如果 CUDNN 安装到了不同的 CUDA 子目录，把包含 `cudnn64_9.dll` 的目录加入
-`Path`。如果 FFmpeg 是手动解压安装，再额外把 FFmpeg 的 `bin` 目录加入
-`Path`，例如 `C:\ffmpeg\bin`。
+如果你的 CUDNN 实际路径不同，先运行 `where cudnn64_9.dll`，然后把这条命令
+显示出来的文件夹加入 `Path`。如果 FFmpeg 是手动解压安装，再额外把 FFmpeg
+的 `bin` 目录加入 `Path`，例如 `C:\ffmpeg\bin`。
 
 打开新的 PowerShell，检查环境是否生效：
 
