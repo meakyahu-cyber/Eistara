@@ -7,8 +7,8 @@ DEFAULT_CONFIG: dict = {
     "display_language": "zh-CN",
     "api": {
         "key": "",
-        "base_url": "https://sub.100xlabs.space/v1",
-        "model": "claude-opus-4-8",
+        "base_url": "",
+        "model": "",
         "llm_interface": "chat_completions",
         "llm_stream": False,
         "llm_support_json": True,

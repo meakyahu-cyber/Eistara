@@ -12,21 +12,27 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_RELEASE_ROOT = ROOT.parent / "Eistara_V2_releases"
+DEFAULT_RELEASE_ROOT = ROOT.parent / "Eistara_releases"
 EXCLUDED_DIRS = {
     ".git",
     ".venv",
     ".research_github",
-    "__pycache__",
     "_downloads",
     "_model_cache",
     "batch",
+    "build",
+    "dist",
     "history",
     "jobs",
     "logs",
     "models",
     "output",
+    "tests",
     "work",
+}
+EXCLUDED_ANY_DIRS = {
+    ".pytest_cache",
+    "__pycache__",
 }
 EXCLUDED_FILES = {
     "config.local.yaml",
@@ -59,7 +65,7 @@ def main() -> int:
     args = parse_args()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     release_root = Path(args.release_root).expanduser().resolve()
-    package_name = f"Eistara_V2_release_{timestamp}"
+    package_name = f"Eistara_release_{timestamp}"
     staging = release_root / package_name
     archive = release_root / f"{package_name}.zip"
     manifest = release_root / f"{package_name}.manifest.json"
@@ -113,8 +119,12 @@ def copy_release_tree(target: Path) -> None:
 
 
 def should_exclude(relative: Path, source: Path) -> bool:
-    parts = set(relative.parts)
-    if parts & EXCLUDED_DIRS:
+    parts = relative.parts
+    if parts and parts[0] in EXCLUDED_DIRS:
+        return True
+    if set(parts) & EXCLUDED_ANY_DIRS:
+        return True
+    if any(part.endswith(".egg-info") for part in parts):
         return True
     if source.is_file() and source.name in EXCLUDED_FILES:
         return True

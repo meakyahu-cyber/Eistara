@@ -108,18 +108,46 @@ def default_llm_chat_probe(
     try:
         import requests
 
-        from eistara.adapters.llm.openai_compatible import normalize_openai_base_url
+        from eistara.adapters.llm.openai_compatible import (
+            OpenAICompatibleLlmClient,
+            OpenAICompatibleSettings,
+            normalize_openai_base_url,
+        )
     except Exception as exc:
         return False, f"probe unavailable: {exc}"
 
     url = llm_chat_url(normalize_openai_base_url(base_url))
+    if llm_support_json:
+        try:
+            client = OpenAICompatibleLlmClient(
+                OpenAICompatibleSettings(
+                    base_url=base_url,
+                    model=model_name,
+                    api_key=key,
+                    timeout_sec=timeout,
+                    response_format_json=True,
+                    trust_env_proxy=trust_env_proxy,
+                    proxy_url=str(proxy_url or ""),
+                    max_retries=0,
+                    outer_retries=0,
+                    persist_cache=False,
+                )
+            )
+            parsed_content = client.ask_json('只返回 JSON：{"text":"中文测试"}', log_title="health_llm_chat", use_cache=False)
+            probe_text = str(parsed_content.get("text") if isinstance(parsed_content, dict) else "")
+        except Exception as exc:
+            return False, f"{url}: chat response failed: {exc}"
+        if _has_corrupt_probe_text(probe_text):
+            return False, f"{url}: chat response contains corrupt text; check LLM gateway encoding"
+        if "中文" not in probe_text:
+            return False, f"{url}: chat response did not preserve Chinese text"
+        return True, f"{url}: chat ok"
+
     payload = {
         "model": model_name,
-        "messages": [{"role": "user", "content": "Say ok."}],
+        "messages": [{"role": "user", "content": "只回复：中文测试"}],
+        "temperature": 0,
     }
-    if llm_support_json:
-        payload["response_format"] = {"type": "json_object"}
-        payload["messages"][0]["content"] = "Return JSON only with a boolean field named ok set to true."
     try:
         proxy = str(proxy_url or "").strip()
         proxies = {"http": proxy, "https": proxy} if proxy else None
@@ -146,9 +174,22 @@ def default_llm_chat_probe(
         content = data["choices"][0]["message"]["content"]
     except Exception as exc:
         return False, f"{url}: invalid chat response: {exc}"
-    if not str(content or "").strip():
+    content_text = str(content or "").strip()
+    if not content_text:
         return False, f"{url}: empty chat response"
+    if _has_corrupt_probe_text(content_text):
+        return False, f"{url}: chat response contains corrupt text; check LLM gateway encoding"
+    probe_text = content_text
+    if "中文" not in probe_text:
+        return False, f"{url}: chat response did not preserve Chinese text"
     return True, f"{url}: chat ok"
+
+
+def _has_corrupt_probe_text(text: str) -> bool:
+    value = str(text)
+    if "\ufffd" in value:
+        return True
+    return any(0x80 <= ord(ch) <= 0x9F for ch in value)
 
 
 class RuntimeHealthService:

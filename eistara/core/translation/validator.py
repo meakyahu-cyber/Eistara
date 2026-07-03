@@ -91,6 +91,14 @@ COMMON_ENGLISH_RESIDUE_WORDS = {
 }
 
 
+def has_corrupt_text(text: str) -> bool:
+    """Detect replacement characters produced by bad upstream text decoding."""
+    value = str(text)
+    if "\ufffd" in value:
+        return True
+    return any(0x80 <= ord(ch) <= 0x9F for ch in value)
+
+
 def latin_words(text: str) -> list[str]:
     return re.findall(r"[A-Za-z][A-Za-z0-9]*(?:[-'][A-Za-z0-9]+)*", str(text))
 
@@ -234,6 +242,8 @@ def normalize_translation_response(
         text = str(item.get("text", "")).replace("\n", " ").strip()
         if not text:
             raise ValueError(f"Empty translation for id {item_id}")
+        if has_corrupt_text(text):
+            raise ValueError(f"Corrupt replacement character(s) in translation id {item_id}: {text[:120]}")
         allowed_latin = (source_latin_by_id or {}).get(item_id, set())
         if enforce_latin and has_excess_latin_text(text, allowed_latin, target_language=target_language):
             raise ValueError(f"Likely untranslated English remains in id {item_id}: {text[:120]}")

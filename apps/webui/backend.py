@@ -733,6 +733,7 @@ def _validate_cleanup_root(path: Path) -> None:
         PROJECT_ROOT / "eistara",
         PROJECT_ROOT / "scripts",
         PROJECT_ROOT / "docs",
+        PROJECT_ROOT / "tests",
         PROJECT_ROOT / ".venv",
         PROJECT_ROOT / "_model_cache",
         PROJECT_ROOT / "models",
