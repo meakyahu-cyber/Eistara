@@ -27,6 +27,7 @@ EXCLUDED_DIRS = {
     "logs",
     "models",
     "output",
+    "scripts",
     "tests",
     "work",
 }
@@ -35,6 +36,10 @@ EXCLUDED_ANY_DIRS = {
     "__pycache__",
 }
 EXCLUDED_FILES = {
+    ".gitattributes",
+    ".gitignore",
+    "README.md",
+    "README.zh.md",
     "config.local.yaml",
     ".env",
 }
