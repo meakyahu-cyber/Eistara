@@ -18,26 +18,30 @@ runtime.
 Install these host dependencies before running `setup_env.py`:
 
 - Python 3.10.x
-- FFmpeg, with `ffmpeg.exe` and `ffprobe.exe` in `PATH`
+- FFmpeg. `choco install ffmpeg` usually makes `ffmpeg.exe` and
+  `ffprobe.exe` available automatically; manual zip installs must add the
+  FFmpeg `bin` directory to `Path`.
 - NVIDIA Driver
 - [CUDA Toolkit 12.8](https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_571.96_windows.exe)
 - [CUDNN 9.11.0](https://developer.download.nvidia.com/compute/cudnn/9.11.0/local_installers/cudnn_9.11.0_windows.exe)
 - IndexTTS service started separately, default API URL:
   `http://127.0.0.1:8010/tts`
 
-Open Windows "Edit the system environment variables" > "Environment Variables",
-then set these system variables/paths:
+The CUDA Toolkit installer normally creates `CUDA_PATH` and `CUDA_PATH_V12_8`
+itself. In Windows "Edit the system environment variables" > "Environment
+Variables", just confirm they point to
+`C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8`.
 
-| Item | Value |
-| --- | --- |
-| `CUDA_PATH` | `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8` |
-| `CUDA_PATH_V12_8` | `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8` |
-| `Path` | add `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin` |
-| `Path` | add `C:\Program Files\NVIDIA\CUDNN\v9.11\bin\12.9` |
-| `Path` | add your FFmpeg `bin` directory, for example `C:\ffmpeg\bin` |
+Then make sure system `Path` contains these two GPU runtime folders:
+
+```text
+C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin
+C:\Program Files\NVIDIA\CUDNN\v9.11\bin\12.9
+```
 
 If CUDNN is installed to a different CUDA subfolder, add the folder that
-contains `cudnn64_9.dll`.
+contains `cudnn64_9.dll`. If FFmpeg was installed manually from a zip, also add
+its `bin` directory, for example `C:\ffmpeg\bin`.
 
 Check the host environment in a new PowerShell window:
 
