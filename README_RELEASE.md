@@ -10,7 +10,7 @@ install the TTS service. Start IndexTTS separately and keep its API URL in
 Eistara does not install host-level media/GPU runtimes. Install these on the
 machine first:
 
-- Python 3.10 or 3.11
+- Python 3.10
 - FFmpeg and FFprobe, available in `PATH`
 - NVIDIA driver for GPU acceleration
 - CUDA Toolkit / CUDNN only when your local GPU stack explicitly needs them
@@ -27,8 +27,8 @@ Windows NVIDIA links:
 - [CUDA Toolkit 12.6](https://developer.download.nvidia.com/compute/cuda/12.6.0/local_installers/cuda_12.6.0_560.76_windows.exe)
 - [CUDNN 9.3.0](https://developer.download.nvidia.com/compute/cudnn/9.3.0/local_installers/cudnn_9.3.0_windows.exe)
 
-If Python 3.10/3.11 is not available, `setup_env.py` will try to install and
-use `uv` to provision Python 3.10 for Eistara's `.venv`.
+If Python 3.10 is not available, `setup_env.py` will try to install and use
+`uv` to provision Python 3.10 for Eistara's `.venv`.
 
 ## One-command Install
 

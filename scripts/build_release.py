@@ -39,7 +39,6 @@ EXCLUDED_FILES = {
     ".gitattributes",
     ".gitignore",
     "README.md",
-    "README.zh.md",
     "config.local.yaml",
     ".env",
 }

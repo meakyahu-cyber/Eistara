@@ -47,8 +47,7 @@ DEMUX_PACKAGE = "demucs @ git+https://github.com/adefossez/demucs@b9ab48cad45976
 
 DEFAULT_ASR_MODEL = "Systran/faster-whisper-large-v3"
 ZH_ASR_MODEL = "Huan69/Belle-whisper-large-v3-zh-punct-fasterwhisper"
-SUPPORTED_PYTHON_MIN = (3, 10)
-SUPPORTED_PYTHON_MAX = (3, 12)
+SUPPORTED_PYTHON_VERSION = (3, 10)
 
 
 def main() -> int:
@@ -138,8 +137,8 @@ def find_supported_python() -> list[str] | None:
     if is_supported_python(sys.executable):
         candidates.append([sys.executable])
     if os.name == "nt":
-        candidates.extend([["py", "-3.10"], ["py", "-3.11"]])
-    candidates.extend([["python3.10"], ["python3.11"], ["python"]])
+        candidates.extend([["py", "-3.10"]])
+    candidates.extend([["python3.10"], ["python"]])
     for candidate in candidates:
         if command_is_supported_python(candidate):
             return candidate
@@ -157,7 +156,7 @@ def command_is_supported_python(command: list[str]) -> bool:
     try:
         code = (
             "import sys; "
-            f"raise SystemExit(0 if {SUPPORTED_PYTHON_MIN!r} <= sys.version_info[:2] < {SUPPORTED_PYTHON_MAX!r} else 1)"
+            f"raise SystemExit(0 if sys.version_info[:2] == {SUPPORTED_PYTHON_VERSION!r} else 1)"
         )
         return subprocess.run([*command, "-c", code], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0
     except OSError:
@@ -168,7 +167,7 @@ def is_supported_python(executable: str) -> bool:
     try:
         code = (
             "import sys; "
-            f"raise SystemExit(0 if {SUPPORTED_PYTHON_MIN!r} <= sys.version_info[:2] < {SUPPORTED_PYTHON_MAX!r} else 1)"
+            f"raise SystemExit(0 if sys.version_info[:2] == {SUPPORTED_PYTHON_VERSION!r} else 1)"
         )
         return subprocess.run([executable, "-c", code], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0
     except OSError:
@@ -180,7 +179,7 @@ def ensure_venv_python_version() -> None:
         return
     raise SystemExit(
         f"Existing virtualenv uses an unsupported Python: {PYTHON}. "
-        "Remove .venv and rerun setup_env.py with Python 3.10/3.11 available."
+        "Remove .venv and rerun setup_env.py with Python 3.10 available."
     )
 
 
@@ -193,16 +192,16 @@ def ensure_pip() -> None:
 
 def ensure_uv(args: argparse.Namespace) -> list[str]:
     if command_exists(["uv", "--version"]):
-        print("Python 3.10/3.11 was not found; using uv to provision Python 3.10.")
+        print("Python 3.10 was not found; using uv to provision Python 3.10.")
         return ["uv"]
     try:
         subprocess.run([sys.executable, "-m", "uv", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        print("Python 3.10/3.11 was not found; using uv to provision Python 3.10.")
+        print("Python 3.10 was not found; using uv to provision Python 3.10.")
         return [sys.executable, "-m", "uv"]
     except (OSError, subprocess.CalledProcessError):
         pass
 
-    print("Python 3.10/3.11 was not found; installing uv bootstrapper with the current Python.")
+    print("Python 3.10 was not found; installing uv bootstrapper with the current Python.")
     code = run([sys.executable, "-m", "pip", "install", "--user", "uv"], pip_index_args(args), check=False)
     if code != 0 and args.china_mirror and not args.pip_index.strip():
         print("WARNING: PyPI mirror failed while installing uv; retrying with the official PyPI index.")

@@ -6,7 +6,7 @@ Eistara 是一个视频翻译与中文配音工作流，包含视频下载、转
 
 在 Windows 上使用本地 GPU 加速前，建议先完成宿主机依赖安装：
 
-1. 安装 Python 3.10 或 3.11；如果系统没有该版本，`setup_env.py` 会尝试通过 uv 自动拉取 Python 3.10 创建 `.venv`。
+1. 安装 Python 3.10；如果系统没有 Python 3.10，`setup_env.py` 会尝试通过 uv 自动拉取 Python 3.10 创建 `.venv`。
 2. 安装 FFmpeg，并确保 `ffmpeg` 和 `ffprobe` 可在命令行直接运行。
 3. 安装 NVIDIA Driver。
 4. 如本机 GPU 生态需要，安装 [CUDA Toolkit 12.6](https://developer.download.nvidia.com/compute/cuda/12.6.0/local_installers/cuda_12.6.0_560.76_windows.exe)。
