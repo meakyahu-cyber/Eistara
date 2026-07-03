@@ -11,17 +11,49 @@ Release-package install guide: [README_RELEASE.md](README_RELEASE.md)
 
 ## Runtime Requirements
 
+For normal local dubbing, Eistara expects a Windows NVIDIA GPU environment.
+CPU mode exists for limited debugging, but it is not the recommended release
+runtime.
+
+Install these host dependencies before running `setup_env.py`:
+
 - Python 3.10.x
-- FFmpeg and FFprobe available in `PATH`
-- NVIDIA driver when GPU acceleration is used
-- CUDA Toolkit / CUDNN only when your local GPU stack explicitly needs them
+- FFmpeg, with `ffmpeg.exe` and `ffprobe.exe` in `PATH`
+- NVIDIA Driver
+- [CUDA Toolkit 12.8](https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_571.96_windows.exe)
+- [CUDNN 9.11.0](https://developer.download.nvidia.com/compute/cudnn/9.11.0/local_installers/cudnn_9.11.0_windows.exe)
 - IndexTTS service started separately, default API URL:
   `http://127.0.0.1:8010/tts`
 
+Open Windows "Edit the system environment variables" > "Environment Variables",
+then set these system variables/paths:
+
+| Item | Value |
+| --- | --- |
+| `CUDA_PATH` | `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8` |
+| `CUDA_PATH_V12_8` | `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8` |
+| `Path` | add `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin` |
+| `Path` | add `C:\Program Files\NVIDIA\CUDNN\v9.11\bin\12.9` |
+| `Path` | add your FFmpeg `bin` directory, for example `C:\ffmpeg\bin` |
+
+If CUDNN is installed to a different CUDA subfolder, add the folder that
+contains `cudnn64_9.dll`.
+
+Check the host environment in a new PowerShell window:
+
+```powershell
+python --version
+ffmpeg -version
+ffprobe -version
+nvidia-smi
+nvcc --version
+where cudnn64_9.dll
+```
+
 Eistara's installer creates `.venv`, installs Python dependencies, prepares the
 non-TTS model cache, and creates `config.local.yaml` from
-`config.example.yaml`. It does not install FFmpeg, CUDA Toolkit, CUDNN,
-IndexTTS, or TTS model files.
+`config.example.yaml`. It does not install FFmpeg, NVIDIA Driver, CUDA Toolkit,
+CUDNN, IndexTTS, or TTS model files.
 
 ## Install
 

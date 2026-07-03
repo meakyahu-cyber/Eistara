@@ -7,13 +7,18 @@ install the TTS service. Start IndexTTS separately and keep its API URL in
 
 ## Host Prerequisites
 
+Eistara's normal local dubbing runtime expects a Windows NVIDIA GPU
+environment. CPU mode is only a limited debugging fallback, not the recommended
+release runtime.
+
 Eistara does not install host-level media/GPU runtimes. Install these on the
 machine first:
 
 - Python 3.10
-- FFmpeg and FFprobe, available in `PATH`
-- NVIDIA driver for GPU acceleration
-- CUDA Toolkit / CUDNN only when your local GPU stack explicitly needs them
+- FFmpeg, with `ffmpeg.exe` and `ffprobe.exe` available in `PATH`
+- NVIDIA Driver
+- CUDA Toolkit 12.8
+- CUDNN 9.11.0
 - IndexTTS service, started separately
 
 Windows FFmpeg example:
@@ -24,8 +29,33 @@ choco install ffmpeg
 
 Windows NVIDIA links:
 
-- [CUDA Toolkit 12.6](https://developer.download.nvidia.com/compute/cuda/12.6.0/local_installers/cuda_12.6.0_560.76_windows.exe)
-- [CUDNN 9.3.0](https://developer.download.nvidia.com/compute/cudnn/9.3.0/local_installers/cudnn_9.3.0_windows.exe)
+- [CUDA Toolkit 12.8](https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_571.96_windows.exe)
+- [CUDNN 9.11.0](https://developer.download.nvidia.com/compute/cudnn/9.11.0/local_installers/cudnn_9.11.0_windows.exe)
+
+Open Windows "Edit the system environment variables" > "Environment Variables",
+then set these system variables/paths:
+
+| Item | Value |
+| --- | --- |
+| `CUDA_PATH` | `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8` |
+| `CUDA_PATH_V12_8` | `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8` |
+| `Path` | add `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin` |
+| `Path` | add `C:\Program Files\NVIDIA\CUDNN\v9.11\bin\12.9` |
+| `Path` | add your FFmpeg `bin` directory, for example `C:\ffmpeg\bin` |
+
+If CUDNN is installed to a different CUDA subfolder, add the folder that
+contains `cudnn64_9.dll`.
+
+Check the host environment in a new PowerShell window:
+
+```powershell
+python --version
+ffmpeg -version
+ffprobe -version
+nvidia-smi
+nvcc --version
+where cudnn64_9.dll
+```
 
 If Python 3.10 is not available, `setup_env.py` will try to install and use
 `uv` to provision Python 3.10 for Eistara's `.venv`.

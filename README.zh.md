@@ -10,16 +10,47 @@ IndexTTS 配音、字幕生成、音频混合和最终视频渲染。
 
 ## 运行环境
 
+正常本地配音建议按 Windows + NVIDIA GPU 环境准备。CPU 模式只适合有限调试，
+不是推荐的发包运行方式。
+
+运行 `setup_env.py` 前，先安装这些宿主机依赖：
+
 - Python 3.10.x
-- FFmpeg 和 FFprobe，并且能在命令行直接运行
-- 使用 GPU 加速时需要 NVIDIA Driver
-- CUDA Toolkit / CUDNN 只在本机 GPU 环境明确需要时安装
+- FFmpeg，并确保 `ffmpeg.exe` 和 `ffprobe.exe` 在 `PATH` 里
+- NVIDIA Driver
+- [CUDA Toolkit 12.8](https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_571.96_windows.exe)
+- [CUDNN 9.11.0](https://developer.download.nvidia.com/compute/cudnn/9.11.0/local_installers/cudnn_9.11.0_windows.exe)
 - IndexTTS 服务需要单独启动，默认 API 地址：
   `http://127.0.0.1:8010/tts`
 
+在 Windows 开始菜单搜索“编辑系统环境变量”，打开“环境变量”，然后在系统变量里
+这样配置：
+
+| 项目 | 值 |
+| --- | --- |
+| `CUDA_PATH` | `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8` |
+| `CUDA_PATH_V12_8` | `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8` |
+| `Path` | 添加 `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin` |
+| `Path` | 添加 `C:\Program Files\NVIDIA\CUDNN\v9.11\bin\12.9` |
+| `Path` | 添加 FFmpeg 的 `bin` 目录，例如 `C:\ffmpeg\bin` |
+
+如果 CUDNN 安装到了不同的 CUDA 子目录，把包含 `cudnn64_9.dll` 的目录加入
+`Path`。
+
+打开新的 PowerShell，检查环境是否生效：
+
+```powershell
+python --version
+ffmpeg -version
+ffprobe -version
+nvidia-smi
+nvcc --version
+where cudnn64_9.dll
+```
+
 Eistara 安装脚本会创建 `.venv`、安装 Python 依赖、准备非 TTS 模型缓存，
 并从 `config.example.yaml` 创建 `config.local.yaml`。它不负责安装 FFmpeg、
-CUDA Toolkit、CUDNN、IndexTTS，也不负责下载或管理 TTS 模型。
+NVIDIA Driver、CUDA Toolkit、CUDNN、IndexTTS，也不负责下载或管理 TTS 模型。
 
 ## 安装
 
