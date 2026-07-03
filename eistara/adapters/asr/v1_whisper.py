@@ -128,16 +128,8 @@ def _transcribe_whisperx_local(
         batch_size = 1
         compute_type = "int8"
 
-    if language == "zh":
-        model_name = "Huan69/Belle-whisper-large-v3-zh-punct-fasterwhisper"
-        model_name = resolve_faster_whisper_model(
-            model_name,
-            model_dir,
-            local_alias="Belle-whisper-large-v3-zh-punct-fasterwhisper",
-        )
-    else:
-        model_name = settings.model or str(settings.provider_config.get("model") or "large-v3")
-        model_name = resolve_faster_whisper_model(model_name, model_dir)
+    model_name = settings.model or str(settings.provider_config.get("model") or "large-v3")
+    model_name = resolve_faster_whisper_model(model_name, model_dir)
 
     hf_endpoint = check_hf_mirror()
     if hf_endpoint:

@@ -313,14 +313,6 @@ def _alignment_item(config: AppConfig) -> ModelDependencyItem:
 
 def _selected_local_asr_model(config: AppConfig, project_root: Path) -> tuple[str, Path]:
     model_dir = _resolve_project_path(config.runtime.model_dir, project_root)
-    language = str(config.asr.language or "").strip().lower()
-    if language == "zh":
-        local_name = "Belle-whisper-large-v3-zh-punct-fasterwhisper"
-        local_path = model_dir / local_name
-        if local_path.exists():
-            return local_name, local_path
-        repo_id = "Huan69/Belle-whisper-large-v3-zh-punct-fasterwhisper"
-        return repo_id, faster_whisper_cache_path(repo_id, model_dir)
     model = str(config.asr.model or "large-v3").strip()
     return model, faster_whisper_cache_path(model, model_dir)
 

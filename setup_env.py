@@ -46,7 +46,6 @@ DEMUX_RUNTIME_DEPS = [
 DEMUX_PACKAGE = "demucs @ git+https://github.com/adefossez/demucs@b9ab48cad45976ba42b2ff17b229c071f0df9390"
 
 DEFAULT_ASR_MODEL = "Systran/faster-whisper-large-v3"
-ZH_ASR_MODEL = "Huan69/Belle-whisper-large-v3-zh-punct-fasterwhisper"
 SUPPORTED_PYTHON_VERSION = (3, 10)
 
 
@@ -88,7 +87,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pip-index", default="", help="Override pip index URL. Defaults to Tsinghua mirror when --china-mirror is enabled.")
     parser.add_argument("--hf-endpoint", default="", help="Override HuggingFace endpoint. Defaults to hf-mirror.com when --china-mirror is enabled.")
     parser.add_argument("--torch", choices=["auto", "cpu", "cu128"], default="auto", help="PyTorch wheel channel.")
-    parser.add_argument("--with-zh-asr", action="store_true", help="Also cache the Chinese Belle faster-whisper model.")
     parser.add_argument("--skip-demucs-model", action="store_true", help="Do not prefetch the Demucs htdemucs checkpoint.")
     return parser.parse_args()
 
@@ -254,8 +252,6 @@ def prepare_models(args: argparse.Namespace) -> None:
     model_dir.mkdir(exist_ok=True)
     hf_endpoint = args.hf_endpoint.strip() or (HF_CHINA_ENDPOINT if args.china_mirror else "")
     download_hf_snapshot(DEFAULT_ASR_MODEL, model_dir, hf_endpoint)
-    if args.with_zh_asr:
-        download_hf_snapshot(ZH_ASR_MODEL, model_dir, hf_endpoint)
     if not args.skip_demucs_model:
         prefetch_demucs_model()
 
