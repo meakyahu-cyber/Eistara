@@ -46,7 +46,6 @@ to local `config.local.yaml`, which is not committed.
 
 - Translation batches default to 20 lines.
 - ASR defaults to `Systran/faster-whisper-large-v3`.
-- Optional Chinese ASR cache: `Huan69/Belle-whisper-large-v3-zh-punct-fasterwhisper`.
 - Vocal separation uses Demucs `htdemucs`.
 - Dubbing uses the `source_window` timeline by default.
 - Source-window retiming enables gap borrowing and local audio speed fitting.

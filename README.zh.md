@@ -45,7 +45,6 @@ http://localhost:10127
 
 - 翻译批次默认每批 20 条。
 - ASR 默认使用 `Systran/faster-whisper-large-v3`。
-- 可选中文 ASR 缓存：`Huan69/Belle-whisper-large-v3-zh-punct-fasterwhisper`。
 - 人声分离使用 Demucs `htdemucs`。
 - 配音时间线默认使用 `source_window`。
 - source-window retime 默认启用借窗和局部音频加速。
