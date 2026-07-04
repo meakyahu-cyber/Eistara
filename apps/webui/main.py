@@ -597,10 +597,15 @@ def _single_video_tab(st, backend: WebUiBackend, language: str, preset: str) -> 
     job_id = backend.latest_active_job_id()
     detail = backend.job_detail(job_id) if job_id else None
 
+    if detail:
+        _workflow_status_strip(st, detail, language)
+
     source_col, flow_col = st.columns([1.05, 1], gap="large")
     with source_col:
         _source_section(st, backend, config, detail, language, preset)
-        _cover_section(st, detail, language)
+        if detail and _stage_done(detail, "download"):
+            with st.expander(ui_t(language, "cover"), expanded=False):
+                _cover_section(st, detail, language)
     with flow_col:
         _subtitle_section(st, backend, detail, language, preset)
         _dubbing_section(st, backend, detail, language, preset)
@@ -667,83 +672,111 @@ def _source_section(st, backend: WebUiBackend, config: dict[str, Any], detail: d
                 st.error(str(exc))
 
 
+def _workflow_status_strip(st, detail: dict[str, Any], language: str) -> None:
+    state = detail.get("state") or {}
+    completed = set(state.get("completed_stages") or [])
+    current = str(state.get("current_stage") or state.get("failed_stage") or "")
+    status = str(state.get("status") or "")
+    items = []
+    for stage in STAGE_ORDER:
+        stage_value = stage.value
+        state_class = "done" if stage_value in completed else "current" if stage_value == current else "pending"
+        if status == JobStatus.FAILED.value and stage_value == current:
+            state_class = "failed"
+        items.append(
+            f"""
+            <div class="eistara-flow-step eistara-flow-{state_class}">
+              <span>{html.escape(_display_stage(stage_value, language))}</span>
+            </div>
+            """
+        )
+    st.markdown(
+        f"""
+        <div class="eistara-flow-strip">
+          <div class="eistara-flow-job">{html.escape(str(detail.get("job_id") or ""))}</div>
+          <div class="eistara-flow-steps">{"".join(items)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _cover_section(st, detail: dict[str, Any] | None, language: str) -> None:
-    with st.container(border=True):
-        _section_title(st, ui_t(language, "cover"), ui_t(language, "cover_caption"))
-        source_video = _source_video_path(detail)
-        if source_video is None:
-            st.info(ui_t(language, "cover_source_missing"))
-            return
+    _section_title(st, ui_t(language, "cover"), ui_t(language, "cover_caption"))
+    source_video = _source_video_path(detail)
+    if source_video is None:
+        st.info(ui_t(language, "cover_source_missing"))
+        return
 
-        output_dir = Path(str(detail["job_dir"])) / "output" / "covers"
-        contact_sheet, covers = _existing_cover_paths(output_dir)
-        default_title = suggest_title_from_video(source_video)
-        control_col, preview_col = st.columns([0.95, 1.25], gap="large")
-        with control_col:
-            title = st.text_input(
-                ui_t(language, "cover_title"),
-                value=default_title,
-                placeholder=ui_t(language, "cover_title_placeholder"),
-                key=f"cover_title_{detail['job_id']}",
-            )
-            template_labels = {
-                "cinema": ui_t(language, "cover_template_cinema"),
-                "news": ui_t(language, "cover_template_news"),
-                "clean": ui_t(language, "cover_template_clean"),
-            }
-            template = st.selectbox(
-                ui_t(language, "cover_template"),
-                options=list(COVER_TEMPLATES),
-                format_func=lambda value: template_labels.get(value, value),
-                key=f"cover_template_{detail['job_id']}",
-            )
-            subtitle = st.text_input(
-                ui_t(language, "cover_subtitle"),
-                value="",
-                placeholder=ui_t(language, "cover_subtitle_placeholder"),
-                key=f"cover_subtitle_{detail['job_id']}",
-            )
-            accent = st.text_input(
-                ui_t(language, "cover_accent"),
-                value="",
-                placeholder=ui_t(language, "cover_accent_placeholder"),
-                key=f"cover_accent_{detail['job_id']}",
-            )
-            if st.button(ui_t(language, "generate_covers"), key=f"generate_cover_candidates_{detail['job_id']}", use_container_width=True):
-                try:
-                    with st.spinner(ui_t(language, "generate_covers")):
-                        _generate_covers(
-                            source_video,
-                            output_dir,
-                            title.strip() or default_title,
-                            subtitle.strip(),
-                            accent.strip(),
-                            str(template),
+    output_dir = Path(str(detail.get("output_dir") or Path(str(detail["job_dir"])) / "output")) / "covers"
+    contact_sheet, covers = _existing_cover_paths(output_dir)
+    default_title = suggest_title_from_video(source_video)
+    control_col, preview_col = st.columns([0.95, 1.25], gap="large")
+    with control_col:
+        title = st.text_input(
+            ui_t(language, "cover_title"),
+            value=default_title,
+            placeholder=ui_t(language, "cover_title_placeholder"),
+            key=f"cover_title_{detail['job_id']}",
+        )
+        template_labels = {
+            "cinema": ui_t(language, "cover_template_cinema"),
+            "news": ui_t(language, "cover_template_news"),
+            "clean": ui_t(language, "cover_template_clean"),
+        }
+        template = st.selectbox(
+            ui_t(language, "cover_template"),
+            options=list(COVER_TEMPLATES),
+            format_func=lambda value: template_labels.get(value, value),
+            key=f"cover_template_{detail['job_id']}",
+        )
+        subtitle = st.text_input(
+            ui_t(language, "cover_subtitle"),
+            value="",
+            placeholder=ui_t(language, "cover_subtitle_placeholder"),
+            key=f"cover_subtitle_{detail['job_id']}",
+        )
+        accent = st.text_input(
+            ui_t(language, "cover_accent"),
+            value="",
+            placeholder=ui_t(language, "cover_accent_placeholder"),
+            key=f"cover_accent_{detail['job_id']}",
+        )
+        if st.button(ui_t(language, "generate_covers"), key=f"generate_cover_candidates_{detail['job_id']}", use_container_width=True):
+            try:
+                with st.spinner(ui_t(language, "generate_covers")):
+                    _generate_covers(
+                        source_video,
+                        output_dir,
+                        title.strip() or default_title,
+                        subtitle.strip(),
+                        accent.strip(),
+                        str(template),
+                    )
+                st.success(ui_t(language, "cover_ready"))
+                st.rerun()
+            except Exception as exc:
+                st.error(f"{ui_t(language, 'cover_failed')}: {exc}")
+
+    with preview_col:
+        if contact_sheet:
+            st.markdown(f"**{ui_t(language, 'cover_contact_sheet')}**")
+            st.image(str(contact_sheet), use_container_width=True)
+        if covers:
+            st.markdown(f"**{ui_t(language, 'cover_candidates')}**")
+            for index in range(0, len(covers), 2):
+                columns = st.columns(2)
+                for column, cover_path in zip(columns, covers[index : index + 2]):
+                    with column:
+                        st.image(str(cover_path), use_container_width=True)
+                        st.download_button(
+                            ui_t(language, "cover_download"),
+                            data=cover_path.read_bytes(),
+                            file_name=cover_path.name,
+                            mime="image/jpeg",
+                            key=f"download_{detail['job_id']}_{cover_path.stem}",
+                            use_container_width=True,
                         )
-                    st.success(ui_t(language, "cover_ready"))
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"{ui_t(language, 'cover_failed')}: {exc}")
-
-        with preview_col:
-            if contact_sheet:
-                st.markdown(f"**{ui_t(language, 'cover_contact_sheet')}**")
-                st.image(str(contact_sheet), use_container_width=True)
-            if covers:
-                st.markdown(f"**{ui_t(language, 'cover_candidates')}**")
-                for index in range(0, len(covers), 2):
-                    columns = st.columns(2)
-                    for column, cover_path in zip(columns, covers[index : index + 2]):
-                        with column:
-                            st.image(str(cover_path), use_container_width=True)
-                            st.download_button(
-                                ui_t(language, "cover_download"),
-                                data=cover_path.read_bytes(),
-                                file_name=cover_path.name,
-                                mime="image/jpeg",
-                                key=f"download_{detail['job_id']}_{cover_path.stem}",
-                                use_container_width=True,
-                            )
 
 
 def _generate_covers(video_path: Path, output_dir: Path, title: str, subtitle: str, accent: str, template: str) -> None:
@@ -1078,7 +1111,7 @@ def _history_tab(st, backend: WebUiBackend, language: str) -> None:
             hide_index=True,
         )
 
-        with st.expander(ui_t(language, "history_outputs"), expanded=True):
+        with st.expander(ui_t(language, "history_outputs"), expanded=False):
             for row in jobs:
                 detail = backend.job_detail(row["job"])
                 st.markdown(f"**{html.escape(row['job'])}**")
@@ -1140,7 +1173,7 @@ def _stage_matrix_panel(st, rows: list[dict[str, Any]], language: str) -> None:
         for stage in STAGE_ORDER:
             item[_display_stage(stage.value, language)] = _stage_status_label(str(stage_statuses.get(stage.value) or "pending"), language)
         matrix_rows.append(item)
-    with st.expander(ui_t(language, "stage_matrix"), expanded=True):
+    with st.expander(ui_t(language, "stage_matrix"), expanded=False):
         st.dataframe(matrix_rows, use_container_width=True, hide_index=True)
 
 
@@ -1221,19 +1254,35 @@ def _render_outputs(
     preview = next((item for item in visible if item.get("role") == preview_role), None)
     if preview and st.checkbox(ui_t(language, "preview_final_video") if preview_role == "dub_video" else ui_t(language, "preview_source_video"), value=False, key=f"preview-{preview['role']}-{preview['filename']}"):
         st.video(str(preview["path"]))
-    st.dataframe(
-        [
-            {
-                ui_t(language, "artifact_role"): item["role"],
-                ui_t(language, "artifact_file"): item["filename"],
-                ui_t(language, "artifact_kind"): item["kind"],
-                ui_t(language, "artifact_size"): _format_size(int(item.get("size") or 0)),
-                ui_t(language, "artifact_path"): item["path"],
-            }
-            for item in visible
-        ],
-        use_container_width=True,
-        hide_index=True,
+    cards = []
+    for item in visible:
+        cards.append(
+            f"""
+            <div class="eistara-artifact-card">
+              <div class="eistara-artifact-topline">
+                <span class="eistara-artifact-role">{html.escape(str(item.get("role") or ""))}</span>
+                <span class="eistara-artifact-kind">{html.escape(str(item.get("kind") or ""))}</span>
+              </div>
+              <div class="eistara-artifact-file">{html.escape(str(item.get("filename") or ""))}</div>
+              <div class="eistara-artifact-size">{html.escape(_format_size(int(item.get("size") or 0)))}</div>
+            </div>
+            """
+        )
+    st.markdown(f'<div class="eistara-artifact-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
+    with st.expander(ui_t(language, "artifact_path"), expanded=False):
+        st.dataframe(
+            [
+                {
+                    ui_t(language, "artifact_role"): item["role"],
+                    ui_t(language, "artifact_file"): item["filename"],
+                    ui_t(language, "artifact_kind"): item["kind"],
+                    ui_t(language, "artifact_size"): _format_size(int(item.get("size") or 0)),
+                    ui_t(language, "artifact_path"): item["path"],
+                }
+                for item in visible
+            ],
+            use_container_width=True,
+            hide_index=True,
     )
 
 
@@ -1646,6 +1695,103 @@ div.stButton > button[kind="primary"] {
     display: flex;
     align-items: center;
 }
+.eistara-flow-strip {
+    display: grid;
+    grid-template-columns: minmax(120px, 0.32fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.75rem;
+    border: 1px solid var(--eistara-line);
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 0.7rem 0.85rem;
+    margin: 0 0 0.9rem 0;
+    box-shadow: 0 6px 16px rgba(16, 24, 32, 0.04);
+}
+.eistara-flow-job {
+    color: var(--eistara-muted);
+    font-size: 0.86rem;
+    font-weight: 680;
+    overflow-wrap: anywhere;
+}
+.eistara-flow-steps {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.35rem;
+}
+.eistara-flow-step {
+    min-height: 2.1rem;
+    border-radius: 7px;
+    border: 1px solid var(--eistara-line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--eistara-muted);
+    background: #f8fafb;
+    font-size: 0.82rem;
+    font-weight: 680;
+    text-align: center;
+    padding: 0.25rem;
+}
+.eistara-flow-done {
+    color: var(--eistara-accent);
+    background: var(--eistara-accent-soft);
+    border-color: rgba(22, 134, 111, 0.22);
+}
+.eistara-flow-current {
+    color: var(--eistara-blue);
+    background: var(--eistara-blue-soft);
+    border-color: rgba(36, 91, 143, 0.22);
+}
+.eistara-flow-failed {
+    color: var(--eistara-error);
+    background: #faecec;
+    border-color: #f0caca;
+}
+.eistara-artifact-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.55rem;
+    margin: 0.35rem 0 0.45rem 0;
+}
+.eistara-artifact-card {
+    border: 1px solid var(--eistara-line);
+    border-radius: 8px;
+    background: #fbfcfd;
+    padding: 0.65rem 0.72rem;
+}
+.eistara-artifact-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+.eistara-artifact-role {
+    color: var(--eistara-ink);
+    font-size: 0.82rem;
+    font-weight: 740;
+    overflow-wrap: anywhere;
+}
+.eistara-artifact-kind {
+    color: var(--eistara-accent);
+    background: var(--eistara-accent-soft);
+    border-radius: 999px;
+    padding: 0.08rem 0.42rem;
+    font-size: 0.74rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.eistara-artifact-file {
+    color: #31414e;
+    font-size: 0.86rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+.eistara-artifact-size {
+    color: var(--eistara-muted);
+    font-size: 0.78rem;
+    margin-top: 0.25rem;
+}
 .eistara-job-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -1734,6 +1880,12 @@ div[data-testid="stAlert"] { border-radius: 8px; }
     }
     .eistara-job-meta {
         grid-template-columns: 1fr;
+    }
+    .eistara-flow-strip {
+        grid-template-columns: 1fr;
+    }
+    .eistara-flow-steps {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .eistara-mode-card {
         min-height: auto;
