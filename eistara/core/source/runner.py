@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from eistara.core.jobs import StageName
-from eistara.core.pipeline import StageContext, StageResult
+from eistara.core.pipeline import StageContext, StageResult, resolve_output_dir
 
 from .models import SourceRequest, SourceSettings, allowed_video_formats
 from .providers import LocalFileSourceProvider, SourceProvider
@@ -27,7 +27,7 @@ class SourceStageRunner:
     stage: StageName = StageName.DOWNLOAD
 
     def run(self, context: StageContext) -> StageResult:
-        output_dir = Path(context.task.get("output_dir") or context.job_dir / "output")
+        output_dir = resolve_output_dir(context)
         existing = _existing_source_video(output_dir, self.settings)
         if existing:
             source = context.task.get("source") or context.task.get("source_video")

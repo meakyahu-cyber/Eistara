@@ -10,7 +10,7 @@ import pandas as pd
 
 from eistara.core.delivery import ArtifactRole, SubtitleDeliveryGenerator, SubtitleRow
 from eistara.core.jobs.models import StageName
-from eistara.core.pipeline import StageContext, StageResult, output_internal_path
+from eistara.core.pipeline import StageContext, StageResult, output_internal_path, resolve_output_dir
 from eistara.core.subtitle import SubtitleEvent, format_srt_timestamp, normalize_subtitle_text, parse_time_seconds, render_srt
 from eistara.core.tts.segments import write_tts_segments_json
 
@@ -32,7 +32,7 @@ class PublishTranslationStageRunner:
         if not items:
             return StageResult(status="skipped", skipped=True, warnings=["No translation input in task or artifacts"])
 
-        output_dir = Path(context.task.get("output_dir") or context.job_dir / "output")
+        output_dir = resolve_output_dir(context)
         settings = _settings_for_context(self.settings, context)
         terminology_source, explicit_terminology = _terminology_source(context, output_dir)
         custom_terms_path = _custom_terms_path(context, output_dir)
@@ -124,7 +124,7 @@ def _load_translation_input(context: StageContext) -> tuple[list[TranslationItem
     if raw_items:
         return [_translation_item_from_mapping(dict(item), index) for index, item in enumerate(raw_items, 1)], None
 
-    output_dir = Path(context.task.get("output_dir") or context.job_dir / "output")
+    output_dir = resolve_output_dir(context)
     rows_json = context.task.get("subtitle_rows_json") or context.artifacts.get("subtitle_rows_json")
     if rows_json:
         rows = SubtitleDeliveryGenerator.from_config(context.config).load_rows_json(rows_json)

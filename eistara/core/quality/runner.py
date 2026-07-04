@@ -8,7 +8,7 @@ from typing import Any
 from eistara.core.delivery import SubtitleDeliveryGenerator, SubtitleRow
 from eistara.core.dubbing import build_audio_mix_plan
 from eistara.core.jobs.models import StageName
-from eistara.core.pipeline import StageContext, StageResult
+from eistara.core.pipeline import StageContext, StageResult, resolve_output_dir
 from eistara.core.timeline import build_dub_timeline
 
 from .service import QualityGateService
@@ -23,17 +23,17 @@ class QualityStageRunner:
         translations_json = context.task.get("translations_json") or context.artifacts.get("translations_json")
         subtitle_rows_json = context.task.get("subtitle_rows_json") or context.artifacts.get("subtitle_rows_json")
         dub_segments_json = context.task.get("dub_segments_json") or context.artifacts.get("dub_segments_json")
+        output_dir = resolve_output_dir(context)
         report = self.service.check(
             translations=_load_translations(translations_json),
             subtitle_rows=_load_subtitle_rows(subtitle_rows_json),
             timeline=_load_timeline(dub_segments_json),
             audio_mix_plan=(
-                build_audio_mix_plan(_load_timeline(dub_segments_json), context.job_dir / "output" / "dub.mp3")
+                build_audio_mix_plan(_load_timeline(dub_segments_json), output_dir / "dub.mp3")
                 if dub_segments_json
                 else None
             ),
         )
-        output_dir = Path(context.task.get("output_dir") or context.job_dir / "output")
         output_dir.mkdir(parents=True, exist_ok=True)
         report_path = output_dir / "quality_report.json"
         report_path.write_text(json.dumps(report.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")

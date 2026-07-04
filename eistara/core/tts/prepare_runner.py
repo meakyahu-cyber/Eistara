@@ -10,7 +10,7 @@ from typing import Any
 import pandas as pd
 
 from eistara.core.jobs.models import StageName
-from eistara.core.pipeline import StageContext, StageResult
+from eistara.core.pipeline import StageContext, StageResult, resolve_output_dir
 from eistara.core.subtitle import parse_time_seconds
 from eistara.core.tts.reference_audio import extract_reference_audio_segments
 from eistara.core.tts.segments import load_tts_segments, write_tts_segments_json
@@ -23,7 +23,7 @@ class TtsPrepareStageRunner:
 
     def run(self, context: StageContext) -> StageResult:
         segments = load_tts_segments(context)
-        output_dir = _resolve_output_dir(context)
+        output_dir = resolve_output_dir(context)
         if not segments:
             segments = _segments_from_v1_audio_subtitles(context, output_dir)
         if not segments:
@@ -494,10 +494,3 @@ def _extract_reference_audio(context: StageContext, output_dir: Path, reference_
         reference_audio_dir=reference_audio_dir,
         tts_tasks=tts_tasks,
     )
-
-
-def _resolve_output_dir(context: StageContext) -> Path:
-    output_dir = Path(context.task.get("output_dir") or context.job_dir / "output")
-    if not output_dir.is_absolute():
-        output_dir = context.job_dir / output_dir
-    return output_dir

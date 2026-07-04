@@ -19,6 +19,7 @@ from eistara.adapters.llm import OpenAICompatibleLlmClient, OpenAICompatibleSett
 from eistara.core.jobs import Job, JobFactory, JsonJobStore, JobStatus, STAGE_ORDER, StageName, history_dir_for_jobs
 from eistara.core.jobs.factory import normalize_task
 from eistara.core.observability import JsonlEventStore
+from eistara.core.pipeline import resolve_task_output_dir
 from eistara.core.scheduler import SchedulerLock, collect_status_rows, recover_orphaned_scheduler_state, scheduler_health
 from eistara.runtime import WEBUI_DEFAULT_PRESET, RuntimeHealthService, build_model_dependency_report, build_scheduler
 
@@ -347,14 +348,16 @@ class WebUiBackend:
         include_reports: bool = True,
     ) -> dict[str, Any]:
         job = self._load_job(job_id)
+        output_dir = resolve_task_output_dir(job.job_dir, job.task)
         return {
             "job_id": job.job_id,
             "job_dir": str(job.job_dir),
+            "output_dir": str(output_dir),
             "task": job.task,
             "state": job.state.to_dict(),
             "outputs": self._job_outputs_for_job(job),
             "manifest": self._read_json(job.job_dir / "manifest.json") if include_reports else None,
-            "quality_report": self._read_json(job.job_dir / "output" / "quality_report.json") if include_reports else None,
+            "quality_report": self._read_json(output_dir / "quality_report.json") if include_reports else None,
             "events": [event.to_dict() for event in self._read_job_events(job)] if include_events else [],
         }
 
@@ -369,7 +372,7 @@ class WebUiBackend:
             job=job,
             outputs=self._job_outputs_for_job(job),
             manifest=self._read_json(job.job_dir / "manifest.json"),
-            quality_report=self._read_json(job.job_dir / "output" / "quality_report.json"),
+            quality_report=self._read_json(resolve_task_output_dir(job.job_dir, job.task) / "quality_report.json"),
             events=events,
             config_summary=self.active_config(),
         )
@@ -394,7 +397,7 @@ class WebUiBackend:
         }
 
     def _job_outputs_for_job(self, job: Job) -> list[dict[str, Any]]:
-        output_dir = Path(job.task.get("output_dir") or job.job_dir / "output")
+        output_dir = resolve_task_output_dir(job.job_dir, job.task)
         artifacts = job.state.artifacts
         candidates = [
             ("source_video", artifacts.get("source_video"), "video"),

@@ -8,7 +8,7 @@ from typing import Any
 from eistara.core.jobs import StageName
 from eistara.core.media import MediaProvider, build_audio_extract_plan
 from eistara.core.media.validation import is_usable_media_file, remove_unusable_media_file
-from eistara.core.pipeline import StageContext, StageResult, output_internal_path
+from eistara.core.pipeline import StageContext, StageResult, output_internal_path, resolve_output_dir
 from eistara.core.subtitle.nlp_split import (
     DEFAULT_LANGUAGE_SPLIT_WITH_SPACE,
     DEFAULT_LANGUAGE_SPLIT_WITHOUT_SPACE,
@@ -29,7 +29,7 @@ class TranscribeStageRunner:
     stage: StageName = StageName.TRANSCRIBE
 
     def run(self, context: StageContext) -> StageResult:
-        output_dir = Path(context.task.get("output_dir") or context.job_dir / "output")
+        output_dir = resolve_output_dir(context)
         audio_path = context.task.get("audio_path") or context.task.get("source_audio") or context.artifacts.get("raw_audio")
         warnings: list[str] = []
 

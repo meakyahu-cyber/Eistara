@@ -8,7 +8,7 @@ from eistara.core.delivery import ArtifactRole, SubtitleDeliveryGenerator
 from eistara.core.jobs.models import StageName
 from eistara.core.media import build_compose_video_plan
 from eistara.core.media.validation import is_usable_media_file, remove_unusable_media_file
-from eistara.core.pipeline import StageContext, StageResult, output_internal_path
+from eistara.core.pipeline import StageContext, StageResult, output_internal_path, resolve_output_dir
 from eistara.core.timeline import (
     TimelinePolicy,
     TimelinePreparationService,
@@ -47,7 +47,7 @@ class AudioMixPlanStageRunner:
             tts_segments = load_tts_segments(context)
             if not tts_segments:
                 return StageResult(status="skipped", skipped=True, warnings=["No dub_segments_json, tts_segments, or tts_segments_json in task or artifacts"])
-            output_dir = Path(context.task.get("output_dir") or context.job_dir / "output")
+            output_dir = resolve_output_dir(context)
             tts_outputs = (
                 context.task.get("tts_outputs")
                 or context.task.get("tts_segments_output")
@@ -63,7 +63,7 @@ class AudioMixPlanStageRunner:
             )
         else:
             prepare_warnings = []
-        output_dir = Path(context.task.get("output_dir") or context.job_dir / "output")
+        output_dir = resolve_output_dir(context)
         generator = SubtitleDeliveryGenerator.from_config(context.config)
         inputs = generator.load_timeline_inputs_json(segments_path)
         inputs, duration_warnings = apply_v1_processed_clip_durations(
@@ -184,7 +184,7 @@ class ComposePlanStageRunner:
         source_video = context.task.get("source_video") or context.artifacts.get("source_video")
         if not source_video:
             return StageResult(status="skipped", skipped=True, warnings=["No source_video in task or artifacts"])
-        output_dir = Path(context.task.get("output_dir") or context.job_dir / "output")
+        output_dir = resolve_output_dir(context)
         output_dir.mkdir(parents=True, exist_ok=True)
         dub_audio = Path(context.task.get("dub_audio") or context.artifacts.get("dub_audio") or output_dir / self.service.output_audio_name)
         dub_subtitle = context.task.get("dub_subtitle") or context.artifacts.get("dub_subtitles") or output_dir / "output_dub.srt"

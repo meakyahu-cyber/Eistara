@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable, Mapping
 
 from eistara.core.jobs.models import StageName
 
@@ -15,6 +15,18 @@ def output_internal_dir(output_dir: Path) -> Path:
 
 def output_internal_path(output_dir: Path, filename: str) -> Path:
     return output_internal_dir(output_dir) / filename
+
+
+def resolve_task_output_dir(job_dir: str | Path, task: Mapping[str, Any] | None = None) -> Path:
+    job_root = Path(job_dir)
+    output_dir = Path((task or {}).get("output_dir") or job_root / "output")
+    if not output_dir.is_absolute():
+        output_dir = job_root / output_dir
+    return output_dir
+
+
+def resolve_output_dir(context: Any) -> Path:
+    return resolve_task_output_dir(context.job_dir, context.task)
 
 
 @dataclass(frozen=True, slots=True)

@@ -11,7 +11,7 @@ import pandas as pd
 
 from eistara.core.jobs.models import StageName
 from eistara.core.media import MediaProbe, source_duration_sec
-from eistara.core.pipeline import StageContext, StageResult
+from eistara.core.pipeline import StageContext, StageResult, resolve_output_dir
 
 from .models import TtsRequest, TtsSettings
 from .providers import TtsProvider
@@ -34,7 +34,7 @@ class TtsStageRunner:
         if not segments:
             return StageResult(status="skipped", skipped=True, warnings=["No tts_segments or tts_segments_json in task or artifacts"])
 
-        output_dir = _resolve_output_dir(context)
+        output_dir = resolve_output_dir(context)
         settings = self.settings
         prepare_settings = getattr(self.provider, "prepare_settings", None)
         if prepare_settings:
@@ -375,13 +375,6 @@ def _write_audio_quality_report(
         encoding="utf-8",
     )
     return report_path
-
-
-def _resolve_output_dir(context: StageContext) -> Path:
-    output_dir = Path(context.task.get("output_dir") or context.job_dir / "output")
-    if not output_dir.is_absolute():
-        output_dir = context.job_dir / output_dir
-    return output_dir
 
 
 def _speaker_id(value: object) -> str:

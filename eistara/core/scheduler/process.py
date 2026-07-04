@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TextIO
 
 from eistara.core.jobs import Job, StageName
+from eistara.core.pipeline import resolve_task_output_dir
 
 from .lock import SchedulerLock
 from .service import SchedulerService
@@ -140,7 +141,7 @@ class SchedulerProcessSupervisor:
             env["PYTHONUTF8"] = "1"
             env["PYTHONUNBUFFERED"] = "1"
             env["EISTARA_JOB_DIR"] = os.fspath(job.job_dir)
-            env["EISTARA_OUTPUT_DIR"] = os.fspath(Path(job.task.get("output_dir") or job.job_dir / "output"))
+            env["EISTARA_OUTPUT_DIR"] = os.fspath(resolve_task_output_dir(job.job_dir, job.task))
             process = subprocess.Popen(
                 command,
                 cwd=os.fspath(self.cwd) if self.cwd else None,

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from eistara.config import ConfigLoader
 from eistara.core.jobs import JobStatus, JsonJobStore, StageName
-from eistara.core.pipeline import StageContext
+from eistara.core.pipeline import StageContext, resolve_task_output_dir
 from eistara.core.scheduler.worker_result import StageWorkerResult, write_stage_worker_result
 
 from .pipeline import build_runners
@@ -51,7 +51,7 @@ def run_stage_worker(
         previous_job_dir = os.environ.get("EISTARA_JOB_DIR")
         previous_output_dir = os.environ.get("EISTARA_OUTPUT_DIR")
         os.environ["EISTARA_JOB_DIR"] = os.fspath(job.job_dir)
-        os.environ["EISTARA_OUTPUT_DIR"] = os.fspath(Path(job.task.get("output_dir") or job.job_dir / "output"))
+        os.environ["EISTARA_OUTPUT_DIR"] = os.fspath(resolve_task_output_dir(job.job_dir, job.task))
         try:
             result = runner.run(
                 StageContext(
